@@ -1,0 +1,33 @@
+# Binaries
+minisky
+minisky-daemon
+
+# Local state and caches
+.minisky/
+.claude/
+scratch/
+
+# Go
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node / UI
+ui/node_modules/
+ui/dist/
+ui/.env*
+ui/npm-debug.log*
+ui/yarn-debug.log*
+ui/yarn-error.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

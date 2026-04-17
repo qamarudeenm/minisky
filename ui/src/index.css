@@ -1,0 +1,61 @@
+:root {
+  --background-base: #f8f9fa;
+  --surface-panel: #ffffff;
+  --panel-border: #dadce0;
+  --text-primary: #202124;
+  --text-secondary: #5f6368;
+  --gcp-blue: #1a73e8;
+  --gcp-red: #d93025;
+  --gcp-yellow: #f9ab00;
+  --gcp-green: #1e8e3e;
+}
+
+body {
+  margin: 0;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  background-color: var(--background-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Material Design standard panel to replace the dark glass panels */
+.material-panel {
+  background: var(--surface-panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.material-panel:hover {
+  box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 2px 6px 2px rgba(60,64,67,0.15);
+}
+
+/* Smooth Scrollbar mapped to Google Drive style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f3f4;
+}
+::-webkit-scrollbar-thumb {
+  background: #dadce0;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #bdc1c6;
+}
+
+/* Professional GCP Status Indicators */
+.status-indicator-running {
+  background-color: #e6f4ea !important;
+  color: #137333 !important;
+  border: 1px solid #ceead6;
+}
+
+.status-indicator-sleeping {
+  background-color: #f1f3f4 !important;
+  color: #5f6368 !important;
+  border: 1px solid #dadce0;
+}
