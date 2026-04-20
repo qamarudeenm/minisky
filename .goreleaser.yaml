@@ -55,7 +55,7 @@ nfpms:
       - deb
       - rpm
 
-homebrews:
+brews:
   - name: minisky
     repository:
       owner: qamarudeenm
