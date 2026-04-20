@@ -62,4 +62,7 @@ docs/service-catalog.md
 docs/task.md
 docs/ui-component-architecture.md
 docs/marketing-posts.md
+docs/event-architecture-alternative.md
+docs/event_triggers.md
+docs/images/*
 .claude

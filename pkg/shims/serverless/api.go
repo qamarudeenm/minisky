@@ -16,9 +16,17 @@ import (
 	"minisky/pkg/shims/logging"
 )
 
+var (
+	singletonAPI *API
+	once         sync.Once
+)
+
 func init() {
 	f := func(ctx *registry.Context) http.Handler {
-		return NewAPI(ctx.OpMgr, ctx.SvcMgr, nil)
+		once.Do(func() {
+			singletonAPI = NewAPI(ctx.OpMgr, ctx.SvcMgr, nil)
+		})
+		return singletonAPI
 	}
 	registry.Register("cloudfunctions.googleapis.com", f)
 	registry.Register("run.googleapis.com", f)

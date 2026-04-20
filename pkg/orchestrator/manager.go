@@ -36,6 +36,7 @@ type ContainerConfig struct {
 	ContainerPort string // e.g. "4443/tcp"
 	Cmd           []string
 	Volume        string
+	Env           []string
 }
 
 // PortMapping tracks a host:container port pair for a VM.
@@ -112,7 +113,7 @@ func (sm *ServiceManager) EnsureNetwork(ctx context.Context) error {
 }
 
 // EnsureServiceRunning boots the container if needed and returns its internal bridge URL.
-func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain string) (string, error) {
+func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain string, env ...string) (string, error) {
 	reg := config.GetImageRegistry()
 	cfg, exists := reg.Emulators[domain]
 	if !exists {
@@ -127,6 +128,7 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 		ContainerPort: cfg.Port,
 		Cmd:           cfg.Cmd,
 		Volume:        cfg.Volume,
+		Env:           env,
 	}
 
 	status, err := sm.checkStatus(cfg.Name)
@@ -142,22 +144,29 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 				log.Printf("[Orchestrator] Image check error: %v", err)
 			}
 			if !exists {
+				log.Printf("[Orchestrator] Pulling image '%s'...", iconfig.Image)
 				if err := sm.pullImage(iconfig.Image); err != nil {
 					log.Printf("[Orchestrator] Image pull warning: %v", err)
 				}
+				log.Printf("[Orchestrator] Image '%s' pull complete.", iconfig.Image)
 			} else {
 				log.Printf("[Orchestrator] Image '%s' already exists locally, skipping pull.", iconfig.Image)
 			}
+			log.Printf("[Orchestrator] Creating container '%s'...", iconfig.Name)
 			if err := sm.createContainer(iconfig); err != nil {
 				return "", fmt.Errorf("create container: %v", err)
 			}
+			log.Printf("[Orchestrator] Container '%s' created.", iconfig.Name)
 		}
+		log.Printf("[Orchestrator] Starting container '%s'...", iconfig.Name)
 		if err := sm.startContainer(iconfig.Name); err != nil {
 			return "", fmt.Errorf("start container: %v", err)
 		}
+		log.Printf("[Orchestrator] Container '%s' started.", iconfig.Name)
 	}
 
 	// Discover the internal bridge IP — no host port binding needed
+	log.Printf("[Orchestrator] Discovering internal URL for '%s'...", iconfig.Name)
 	internalURL, err := sm.discoverInternalURL(iconfig)
 	if err != nil {
 		return "", fmt.Errorf("port discovery: %v", err)
@@ -166,7 +175,8 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 	// Wait until the emulator is truly ready inside the network
 	containerPort := strings.Split(iconfig.ContainerPort, "/")[0]
 	internalAddr := strings.TrimPrefix(internalURL, "http://")
-	if err := sm.waitUntilReady(internalAddr, 20*time.Second); err != nil {
+	log.Printf("[Orchestrator] Waiting for readiness probe at %s...", internalAddr)
+	if err := sm.waitUntilReady(internalAddr, 30*time.Second); err != nil {
 		return "", fmt.Errorf("readiness probe failed: %v", err)
 	}
 
@@ -822,7 +832,16 @@ func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 		},
 	}
 	if c.Volume != "" {
-		hostCfg["Binds"] = []string{c.Volume}
+		vol := c.Volume
+		if strings.Contains(vol, ":") {
+			parts := strings.SplitN(vol, ":", 2)
+			if !filepath.IsAbs(parts[0]) {
+				if abs, err := filepath.Abs(parts[0]); err == nil {
+					vol = abs + ":" + parts[1]
+				}
+			}
+		}
+		hostCfg["Binds"] = []string{vol}
 	}
 
 	payload := map[string]interface{}{
@@ -830,6 +849,7 @@ func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 		"Cmd":          c.Cmd,
 		"ExposedPorts": map[string]interface{}{c.ContainerPort: struct{}{}},
 		"HostConfig":   hostCfg,
+		"Env":          c.Env,
 	}
 	data, _ := json.Marshal(payload)
 	url := fmt.Sprintf("http://localhost/containers/create?name=%s", c.Name)

@@ -26,8 +26,11 @@ func (d *DuckDBBackend) SetEnabled(enabled bool) error {
 }
 
 func (d *DuckDBBackend) ExecuteQuery(query string) ([]map[string]interface{}, error) {
-	log.Printf("[BigQuery] WARNING: SQL execution is disabled in this CGO-less build.")
-	return nil, fmt.Errorf("SQL execution requires the CGO-enabled version of MiniSky")
+	return nil, fmt.Errorf("duckdb backend requires CGO_ENABLED=1")
+}
+
+func (d *DuckDBBackend) LoadData(project, dataset, table, sourceURI, format string) error {
+	return fmt.Errorf("duckdb backend requires CGO_ENABLED=1")
 }
 
 func (d *DuckDBBackend) CreateTable(project, dataset, table string, schema *TableSchema) error {

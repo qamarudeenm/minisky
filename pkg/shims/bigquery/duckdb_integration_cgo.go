@@ -149,6 +149,31 @@ func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 	return results, nil
 }
 
+// LoadData ingests a file or URL into a DuckDB table.
+func (d *DuckDBBackend) LoadData(project, dataset, table, sourceURI, format string) error {
+	if !d.enabled {
+		return fmt.Errorf("duckdb backend not enabled")
+	}
+	tableName := fmt.Sprintf("%s__%s", dataset, table)
+	
+	var query string
+	format = strings.ToUpper(format)
+	switch format {
+	case "CSV":
+		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_csv_auto('%s')", tableName, sourceURI)
+	case "JSON", "NEWLINE_DELIMITED_JSON":
+		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_json_auto('%s')", tableName, sourceURI)
+	case "PARQUET":
+		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_parquet('%s')", tableName, sourceURI)
+	default:
+		return fmt.Errorf("unsupported format for DuckDB load: %s", format)
+	}
+
+	log.Printf("[DuckDBBackend] Loading data: %s", query)
+	_, err := d.db.Exec(query)
+	return err
+}
+
 // CreateTable creates a DuckDB table from a BigQuery TableSchema.
 func (d *DuckDBBackend) CreateTable(project, dataset, table string, schema *TableSchema) error {
 	if !d.enabled || schema == nil {

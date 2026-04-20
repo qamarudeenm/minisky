@@ -79,6 +79,7 @@ func NewAPIHandler(
 	mux.Handle("/api/manage/cloudsql/", api.handleManageCloudSql())
 	mux.Handle("/api/manage/dataproc/", api.handleManageDataproc())
 	mux.Handle("/api/manage/bigtable/", api.handleManageBigtable())
+	mux.Handle("/api/manage/spanner/", api.handleManageSpanner())
 	mux.Handle("/api/manage/gke/", api.handleManageGke())
 	mux.Handle("/api/manage/serverless/", api.handleManageServerless())
 	mux.HandleFunc("/api/manage/logging/entries", api.handleLoggingEntries)
@@ -203,13 +204,22 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 
 	if action == "start" {
 		if domain, ok := domainMap[id]; ok {
+			project := r.URL.Query().Get("project")
 			go func() {
 				// We don't block the UI
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
-				_, err := api.svcMgr.EnsureServiceRunning(ctx, domain)
+				
+				var env []string
+				if project != "" {
+					env = append(env, "CLOUDSDK_CORE_PROJECT="+project)
+					env = append(env, "GCP_PROJECT="+project)
+					env = append(env, "GOOGLE_CLOUD_PROJECT="+project)
+				}
+				
+				_, err := api.svcMgr.EnsureServiceRunning(ctx, domain, env...)
 				if err != nil {
-					log.Printf("[UI/API] Failed to EnsureServiceRunning for %s: %v", domain, err)
+					log.Printf("[UI/API] Failed to EnsureServiceRunning for %s (project: %s): %v", domain, project, err)
 				}
 			}()
 		}
@@ -481,9 +491,35 @@ func (api *API) handleManageBigtable() http.Handler {
 		if !strings.HasPrefix(path, "/") {
 			path = "/" + path
 		}
+		
 		req.URL.Path = "/v2" + path
-		req.Host = "bigtableadmin.googleapis.com"
-		log.Printf("[UI/API Proxy] Bigtable Admin \u2192 %s", req.URL.Path)
+		
+		// Switch between Admin and Data APIs
+		if strings.Contains(path, ":") {
+			req.Host = "bigtable.googleapis.com"
+		} else {
+			req.Host = "bigtableadmin.googleapis.com"
+		}
+		
+		log.Printf("[UI/API Proxy] Bigtable (%s) \u2192 %s", req.Host, req.URL.Path)
+	}
+	return proxy
+}
+
+func (api *API) handleManageSpanner() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/spanner")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		// Spanner Admin API is under /v1
+		req.URL.Path = "/v1" + path
+		req.Host = "spanner.googleapis.com"
+		log.Printf("[UI/API Proxy] Spanner Admin → %s", req.URL.Path)
 	}
 	return proxy
 }

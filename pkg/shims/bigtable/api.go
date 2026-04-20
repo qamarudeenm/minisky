@@ -1,12 +1,19 @@
 package bigtable
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
+
+	"cloud.google.com/go/bigtable"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"minisky/pkg/orchestrator"
 	"minisky/pkg/registry"
@@ -45,7 +52,7 @@ type GcRule struct {
 	MaxNumVersions int32   `json:"maxNumVersions,omitempty"`
 }
 
-// API is the high-fidelity Bigtable Admin shim.
+// API is the high-fidelity Bigtable Admin & Data shim.
 type API struct {
 	mu        sync.RWMutex
 	opMgr     *orchestrator.OperationManager
@@ -63,12 +70,17 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 	}
 }
 
-// ServeHTTP dispatches Bigtable Admin paths.
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[Shim: Bigtable] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 
 	path := r.URL.Path
+
+	// Data API suffix
+	if strings.HasSuffix(path, ":readRows") {
+		api.handleReadRows(w, r, strings.TrimSuffix(path, ":readRows"))
+		return
+	}
 
 	switch {
 	case strings.Contains(path, "/instances") && !strings.Contains(path, "/tables"):
@@ -86,7 +98,6 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) routeInstances(w http.ResponseWriter, r *http.Request, path string) {
-	// Path: /v2/projects/{project}/instances[/{instance}]
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	project := ""
 	instanceId := ""
@@ -114,9 +125,8 @@ func (api *API) routeInstances(w http.ResponseWriter, r *http.Request, path stri
 		api.instances[name] = inst
 		api.mu.Unlock()
 
-		// Trigger Emulator Provisioning if this is the first instance
 		go func() {
-			api.svcMgr.EnsureServiceRunning(r.Context(), "bigtable.googleapis.com")
+			api.svcMgr.EnsureServiceRunning(context.Background(), "bigtable.googleapis.com")
 		}()
 
 		w.WriteHeader(http.StatusOK)
@@ -159,7 +169,6 @@ func (api *API) routeInstances(w http.ResponseWriter, r *http.Request, path stri
 }
 
 func (api *API) routeTables(w http.ResponseWriter, r *http.Request, path string) {
-	// Path: /v2/projects/{p}/instances/{i}/tables[/{t}]
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 5 {
 		w.WriteHeader(http.StatusBadRequest)
@@ -233,6 +242,71 @@ func (api *API) routeTables(w http.ResponseWriter, r *http.Request, path string)
 }
 
 func (api *API) routeClusters(w http.ResponseWriter, r *http.Request, path string) {
-	// Basic list support to satisfy discovery/SDKs
 	json.NewEncoder(w).Encode(map[string]interface{}{"clusters": []interface{}{}})
+}
+
+// handleReadRows implements the REST-to-gRPC bridge for Bigtable Data exploration.
+func (api *API) handleReadRows(w http.ResponseWriter, r *http.Request, resourcePath string) {
+	// resourcePath: /v2/projects/{p}/instances/{i}/tables/{t}
+	parts := strings.Split(strings.Trim(resourcePath, "/"), "/")
+	if len(parts) < 6 {
+		http.Error(w, "Invalid table path", 400)
+		return
+	}
+	projectID := parts[2]
+	instanceID := parts[4]
+	tableID := parts[6]
+
+	// 1. Get emulator address
+	addr, err := api.svcMgr.EnsureServiceRunning(r.Context(), "bigtable.googleapis.com")
+	if err != nil {
+		http.Error(w, "Bigtable emulator not running", 503)
+		return
+	}
+	// Strip http:// prefix if present
+	addr = strings.TrimPrefix(addr, "http://")
+
+	// 2. Connect to Bigtable gRPC
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	client, err := bigtable.NewClient(ctx, projectID, instanceID, 
+		option.WithEndpoint(addr),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		option.WithoutAuthentication(),
+	)
+	if err != nil {
+		http.Error(w, "Failed to connect to Bigtable: "+err.Error(), 500)
+		return
+	}
+	defer client.Close()
+
+	table := client.Open(tableID)
+	
+	var rows []map[string]interface{}
+	err = table.ReadRows(ctx, bigtable.InfiniteRange(""), func(row bigtable.Row) bool {
+		rowMap := map[string]interface{}{
+			"key": row.Key(),
+			"data": make(map[string]interface{}),
+		}
+		
+		data := rowMap["data"].(map[string]interface{})
+		for family, items := range row {
+			familyData := make(map[string]interface{})
+			for _, item := range items {
+				// For simple exploration, we just show the latest value as a string
+				familyData[item.Column] = string(item.Value)
+			}
+			data[family] = familyData
+		}
+		rows = append(rows, rowMap)
+		return len(rows) < 100 // Limit to 100 rows for the UI
+	})
+
+	if err != nil {
+		http.Error(w, "ReadRows failed: "+err.Error(), 500)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"rows": rows})
 }

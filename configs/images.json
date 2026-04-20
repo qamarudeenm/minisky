@@ -28,7 +28,7 @@
       "name": "minisky-datastore",
       "image": "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
       "port": "8081/tcp",
-      "cmd": ["gcloud", "beta", "emulators", "datastore", "start", "--host-port=0.0.0.0:8081", "--data-dir=/data"],
+      "cmd": ["gcloud", "beta", "emulators", "datastore", "start", "--host-port=0.0.0.0:8081", "--data-dir=/data", "--project=minisky-project"],
       "volume": "./data/datastore:/data"
     },
     "spanner.googleapis.com": {

@@ -5,9 +5,13 @@ import FirestoreManagerDrawer from './FirestoreManagerDrawer';
 import BigQueryManagerDrawer from './BigQueryManagerDrawer';
 import CloudSqlManagerDrawer from './CloudSqlManagerDrawer';
 import BigtableManagerDrawer from './BigtableManagerDrawer';
+import DatastoreManagerDrawer from './DatastoreManagerDrawer';
+import SpannerManagerDrawer from './SpannerManagerDrawer';
+import { useProjectContext } from '../contexts/ProjectContext';
 import { useState } from 'react';
 
 export default function DatabasePage() {
+  const { activeProject } = useProjectContext();
   const { 
     services, settings, handleStartContainer, handleStopContainer, toggleSetting, handleInstallDependency 
   } = useServices();
@@ -16,12 +20,16 @@ export default function DatabasePage() {
   const [bigqueryOpen, setBigqueryOpen] = useState(false);
   const [cloudSqlOpen, setCloudSqlOpen] = useState(false);
   const [bigtableOpen, setBigtableOpen] = useState(false);
+  const [datastoreOpen, setDatastoreOpen] = useState(false);
+  const [spannerOpen, setSpannerOpen] = useState(false);
 
   const handleManage = (id: string) => {
     if (id === 'firestore') setFirestoreOpen(true);
     if (id === 'bigquery') setBigqueryOpen(true);
     if (id === 'sqladmin') setCloudSqlOpen(true);
     if (id === 'bigtable') setBigtableOpen(true);
+    if (id === 'datastore') setDatastoreOpen(true);
+    if (id === 'spanner') setSpannerOpen(true);
   };
 
   return (
@@ -34,7 +42,7 @@ export default function DatabasePage() {
             service={s} 
             idx={idx} 
             settings={settings}
-            onStartContainer={handleStartContainer}
+            onStartContainer={(id) => handleStartContainer(id, activeProject)}
             onStopContainer={handleStopContainer}
             onToggleSetting={toggleSetting}
             onManage={handleManage}
@@ -46,6 +54,8 @@ export default function DatabasePage() {
       <BigQueryManagerDrawer open={bigqueryOpen} onClose={() => setBigqueryOpen(false)} />
       <CloudSqlManagerDrawer open={cloudSqlOpen} onClose={() => setCloudSqlOpen(false)} />
       <BigtableManagerDrawer open={bigtableOpen} onClose={() => setBigtableOpen(false)} />
+      <DatastoreManagerDrawer open={datastoreOpen} onClose={() => setDatastoreOpen(false)} />
+      <SpannerManagerDrawer open={spannerOpen} onClose={() => setSpannerOpen(false)} />
     </Box>
   );
 }

@@ -35,8 +35,12 @@ export function useServices() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleStartContainer = async (id: string) => {
-    await fetch(`/api/services/${id}/start`, { method: 'POST' });
+  const handleStartContainer = async (id: string, projectID?: string) => {
+    let url = `/api/services/${id}/start`;
+    if (projectID) {
+      url += `?project=${encodeURIComponent(projectID)}`;
+    }
+    await fetch(url, { method: 'POST' });
     loadData();
   };
 

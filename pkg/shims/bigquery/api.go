@@ -3,8 +3,11 @@ package bigquery
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -121,6 +124,7 @@ type JobStatistics struct {
 type JobConfig struct {
 	JobType string       `json:"jobType"` // QUERY, LOAD, EXTRACT, COPY
 	Query   *QueryConfig `json:"query,omitempty"`
+	Load    *LoadConfig  `json:"load,omitempty"`
 }
 
 type QueryConfig struct {
@@ -128,6 +132,13 @@ type QueryConfig struct {
 	UseLegacySql            bool   `json:"useLegacySql"`
 	DefaultDataset          *DatasetRef `json:"defaultDataset,omitempty"`
 	DestinationTable        *TableRef   `json:"destinationTable,omitempty"`
+}
+
+type LoadConfig struct {
+	SourceUris       []string `json:"sourceUris"`
+	DestinationTable TableRef `json:"destinationTable"`
+	SourceFormat     string   `json:"sourceFormat"` // CSV, JSON, NEWLINE_DELIMITED_JSON, PARQUET
+	Autodetect       bool     `json:"autodetect"`
 }
 
 // QueryResultRow is a single row in a query response.
@@ -170,20 +181,6 @@ func (api *API) GetBackend() *DuckDBBackend {
 }
 
 // ServeHTTP dispatches BigQuery v2 paths.
-//
-// Supported paths (bigquery.googleapis.com):
-//   POST   /bigquery/v2/projects/{project}/datasets
-//   GET    /bigquery/v2/projects/{project}/datasets
-//   GET    /bigquery/v2/projects/{project}/datasets/{dataset}
-//   DELETE /bigquery/v2/projects/{project}/datasets/{dataset}
-//   POST   /bigquery/v2/projects/{project}/datasets/{dataset}/tables
-//   GET    /bigquery/v2/projects/{project}/datasets/{dataset}/tables
-//   GET    /bigquery/v2/projects/{project}/datasets/{dataset}/tables/{table}
-//   DELETE /bigquery/v2/projects/{project}/datasets/{dataset}/tables/{table}
-//   POST   /bigquery/v2/projects/{project}/datasets/{dataset}/tables/{table}/insertAll
-//   POST   /bigquery/v2/projects/{project}/jobs
-//   GET    /bigquery/v2/projects/{project}/jobs/{jobId}
-//   GET    /bigquery/v2/projects/{project}/jobs/{jobId}/results (getQueryResults)
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[Shim: BigQuery] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
@@ -193,6 +190,8 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(path, "/insertAll"):
 		api.insertAll(w, r, path)
+	case strings.Contains(path, "/upload"):
+		api.handleUpload(w, r)
 	case strings.Contains(path, "/tables") && strings.Contains(path, "/datasets"):
 		api.routeTables(w, r, path)
 	case strings.Contains(path, "/datasets"):
@@ -205,6 +204,46 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, 404, "NOT_FOUND", "BigQuery resource not found: "+path)
 	}
+}
+
+func (api *API) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.ParseMultipartForm(50 << 20) // 50MB max
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, 400, "INVALID_ARGUMENT", "Error retrieving file: "+err.Error())
+		return
+	}
+	defer file.Close()
+
+	uploadDir := ".minisky/uploads"
+	os.MkdirAll(uploadDir, 0755)
+
+	destPath := filepath.Join(uploadDir, handler.Filename)
+	dst, err := os.Create(destPath)
+	if err != nil {
+		writeError(w, 500, "INTERNAL", "Error creating file: "+err.Error())
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		writeError(w, 500, "INTERNAL", "Error saving file: "+err.Error())
+		return
+	}
+
+	absPath, _ := filepath.Abs(destPath)
+	log.Printf("[BigQuery] File uploaded to: %s", absPath)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"path": absPath,
+		"filename": handler.Filename,
+	})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -519,8 +558,19 @@ func (api *API) insertJob(w http.ResponseWriter, r *http.Request, project string
 		var execErr error
 		var rows []map[string]interface{}
 		
-		if api.backend.Enabled() && body.Configuration.Query != nil && body.Configuration.Query.Query != "" {
-			rows, execErr = api.backend.ExecuteQuery(body.Configuration.Query.Query)
+		if api.backend.Enabled() {
+			if body.Configuration.Query != nil && body.Configuration.Query.Query != "" {
+				rows, execErr = api.backend.ExecuteQuery(body.Configuration.Query.Query)
+			} else if body.Configuration.Load != nil && len(body.Configuration.Load.SourceUris) > 0 {
+				load := body.Configuration.Load
+				execErr = api.backend.LoadData(
+					load.DestinationTable.ProjectId,
+					load.DestinationTable.DatasetId,
+					load.DestinationTable.TableId,
+					load.SourceUris[0],
+					load.SourceFormat,
+				)
+			}
 		} else {
 			time.Sleep(500 * time.Millisecond) // Simulate mock execution
 		}

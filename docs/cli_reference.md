@@ -84,6 +84,12 @@ Lists all Kubernetes clusters (managed via `kind`).
 ### `minisky bigtable instances list`
 Lists all Bigtable instances.
 
+### `minisky spanner instances list`
+Lists all Spanner instances.
+
+### `minisky spanner instances create [id]`
+Creates a new Spanner instance in the local emulator.
+
 ### `minisky dataproc clusters list`
 Lists all Spark/Hadoop clusters.
 

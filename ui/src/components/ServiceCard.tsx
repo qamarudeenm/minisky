@@ -152,6 +152,14 @@ export default function ServiceCard({
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Bigtable</Button>
           )}
 
+          {s.id === 'datastore' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Datastore</Button>
+          )}
+
+          {s.id === 'spanner' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Spanner</Button>
+          )}
+
           {s.id === 'gke' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Clusters</Button>
           )}
