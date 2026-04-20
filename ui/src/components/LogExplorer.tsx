@@ -13,6 +13,7 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import MemoryIcon from '@mui/icons-material/Memory';
 import StorageIcon from '@mui/icons-material/Storage';
 import CodeIcon from '@mui/icons-material/Code';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 
 type LogEntry = {
   insertId: string;
@@ -120,6 +121,17 @@ export default function LogExplorer() {
     if (streamTimer.current) clearInterval(streamTimer.current);
   };
 
+  const handleReset = async () => {
+    if (!window.confirm("Permanently clear all centralized log history?")) return;
+    setLoading(true);
+    try {
+      await fetch('/api/manage/system/reset-logs', { method: 'POST' });
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => () => { if (streamTimer.current) clearInterval(streamTimer.current); }, []);
 
   const filteredEntries = [...entries].filter(e => {
@@ -188,6 +200,12 @@ export default function LogExplorer() {
           <IconButton size="small" onClick={streaming ? stopStream : startStream}
             sx={{ color: streaming ? '#f28b82' : '#81c995', border: '1px solid', borderColor: 'currentColor' }}>
             {streaming ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Clear log history">
+          <IconButton size="small" onClick={handleReset} disabled={loading}
+            sx={{ color: '#f28b82', border: '1px solid', borderColor: '#f28b8240' }}>
+            <DeleteSweepIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Refresh now">

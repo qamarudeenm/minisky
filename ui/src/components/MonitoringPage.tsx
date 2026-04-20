@@ -11,6 +11,7 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import CodeIcon from '@mui/icons-material/Code';
 import StorageIcon from '@mui/icons-material/Storage';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 
 type ContainerMetrics = {
   name: string;
@@ -141,6 +142,17 @@ export default function MonitoringPage() {
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
+  const handlePrune = async () => {
+    if (!window.confirm("Remove all exited containers and unused MiniSky images?")) return;
+    setLoading(true);
+    try {
+      await fetch('/api/manage/system/prune-containers', { method: 'POST' });
+      fetchMetrics();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   const running = metrics.filter(m => m.status.startsWith('Up'));
@@ -192,6 +204,12 @@ export default function MonitoringPage() {
           <IconButton size="small" onClick={streaming ? stopStream : startStream}
             sx={{ color: streaming ? '#f28b82' : '#81c995', border: '1px solid', borderColor: 'currentColor' }}>
             {streaming ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Prune exited containers & unused images">
+          <IconButton size="small" onClick={handlePrune} disabled={loading}
+            sx={{ color: '#f28b82', border: '1px solid', borderColor: '#f28b8240' }}>
+            <DeleteSweepIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Refresh now">

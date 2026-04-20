@@ -1,4 +1,5 @@
 
+import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -50,6 +51,14 @@ function NavigationContent() {
   const { pathname } = useLocation();
   const isLogging = pathname === '/logging';
   const isMonitoring = pathname === '/monitoring';
+  const [version, setVersion] = useState('...');
+
+  useEffect(() => {
+    fetch('/api/system/info')
+      .then(res => res.json())
+      .then(data => setVersion(data.version))
+      .catch(err => console.error('Failed to fetch version:', err));
+  }, []);
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -69,7 +78,7 @@ function NavigationContent() {
             color: '#fff', fontWeight: 600, fontSize: '1.2rem', fontFamily: 'monospace'
           }}>M</Box>
           <Typography variant="h6" sx={{ letterSpacing: '0.01em', fontWeight: 500, color: '#3c4043' }}>
-            MiniSky v2.8
+            MiniSky v{version}
           </Typography>
         </Box>
 

@@ -21,6 +21,7 @@ import (
 	"minisky/pkg/shims/logging"
 	"minisky/pkg/shims/monitoring"
 	"minisky/pkg/shims/serverless"
+	"minisky/pkg/version"
 
 	"github.com/gorilla/websocket"
 )
@@ -62,6 +63,9 @@ func NewAPIHandler(
 	mux.HandleFunc("/api/config/images", api.handleConfigImages)
 	mux.HandleFunc("/api/manage/compute/terminal", api.handleTerminal)
 	mux.HandleFunc("/api/manage/system/install-dependency/", api.handleInstallDependency)
+	mux.HandleFunc("/api/manage/system/reset-logs", api.handleResetLogs)
+	mux.HandleFunc("/api/manage/system/prune-containers", api.handlePruneContainers)
+	mux.HandleFunc("/api/system/info", api.handleSystemInfo)
 
 	// Add reverse proxy for management APIs
 	mux.Handle("/api/manage/storage/", api.handleManageStorage())
@@ -729,4 +733,44 @@ func (api *API) handleMonitoringStats(w http.ResponseWriter, r *http.Request) {
 		metrics = append(metrics, m)
 	}
 	json.NewEncoder(w).Encode(metrics)
+}
+func (api *API) handleResetLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	log.Printf("[UI/API] Request to reset all logs")
+	api.logAPI.Reset()
+	w.WriteHeader(http.StatusOK)
+}
+
+func (api *API) handlePruneContainers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	log.Printf("[UI/API] Request to prune exited containers and unused images")
+	ctx := context.Background()
+	if err := api.svcMgr.PruneExitedContainers(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := api.svcMgr.PruneUnusedImages(ctx); err != nil {
+		log.Printf("[UI/API] Image pruning failed: %v", err)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	info := map[string]string{
+		"version": version.Version,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
 }

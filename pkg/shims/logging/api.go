@@ -170,6 +170,14 @@ func (api *API) GetEntries() []LogEntry {
 	return out
 }
 
+// Reset clears all log entries.
+func (api *API) Reset() {
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	api.entries = make([]LogEntry, 0)
+	go api.save()
+}
+
 // StartHarvester begins a background loop that tails logs from all minisky-serverless containers.
 func (api *API) OnPostBoot(ctx *registry.Context) {
 	api.StartHarvester(ctx.SvcMgr)

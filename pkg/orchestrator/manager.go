@@ -255,6 +255,100 @@ func (sm *ServiceManager) Teardown(ctx context.Context) {
 	log.Printf("[Orchestrator] Removed network '%s'", networkName)
 }
 
+// PruneExitedContainers removes all containers that are not running.
+func (sm *ServiceManager) PruneExitedContainers(ctx context.Context) error {
+	resp, err := sm.dockerClient.Get("http://localhost/containers/json?all=true&filters={\"status\":[\"exited\",\"created\",\"dead\"]}")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var containers []struct {
+		Id    string
+		Names []string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
+		return err
+	}
+
+	for _, c := range containers {
+		name := "unknown"
+		if len(c.Names) > 0 {
+			name = c.Names[0]
+		}
+		log.Printf("[Orchestrator] Pruning container: %s (%s)", name, c.Id)
+		rmURL := fmt.Sprintf("http://localhost/containers/%s?force=true", c.Id)
+		req, _ := http.NewRequestWithContext(ctx, "DELETE", rmURL, nil)
+		sm.dockerClient.Do(req)
+	}
+	return nil
+}
+
+// PruneUnusedImages removes all minisky-fn-* and minisky-svc-* images that are not used by any container.
+func (sm *ServiceManager) PruneUnusedImages(ctx context.Context) error {
+	// 1. Get all containers to see which images are in use
+	resp, err := sm.dockerClient.Get("http://localhost/containers/json?all=true")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var containers []struct {
+		Image   string
+		ImageID string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
+		return err
+	}
+
+	usedImages := make(map[string]bool)
+	for _, c := range containers {
+		usedImages[c.Image] = true
+		usedImages[c.ImageID] = true
+	}
+
+	// 2. List all images
+	imgResp, err := sm.dockerClient.Get("http://localhost/images/json")
+	if err != nil {
+		return err
+	}
+	defer imgResp.Body.Close()
+
+	var images []struct {
+		Id       string
+		RepoTags []string
+	}
+	if err := json.NewDecoder(imgResp.Body).Decode(&images); err != nil {
+		return err
+	}
+
+	for _, img := range images {
+		isMiniSky := false
+		tagName := ""
+		for _, tag := range img.RepoTags {
+			if strings.Contains(tag, "minisky-fn-") || strings.Contains(tag, "minisky-svc-") {
+				isMiniSky = true
+				tagName = tag
+				break
+			}
+		}
+
+		if isMiniSky {
+			// Check if used
+			if usedImages[img.Id] || (tagName != "" && usedImages[tagName]) {
+				continue
+			}
+
+			log.Printf("[Orchestrator] Pruning unused MiniSky image: %s (%s)", tagName, img.Id)
+			rmURL := fmt.Sprintf("http://localhost/images/%s?force=true", img.Id)
+			req, _ := http.NewRequestWithContext(ctx, "DELETE", rmURL, nil)
+			sm.dockerClient.Do(req)
+		}
+	}
+
+	return nil
+}
+
 func (sm *ServiceManager) checkStatus(name string) (string, error) {
 	resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", name))
 	if err != nil {
