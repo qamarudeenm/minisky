@@ -23,11 +23,11 @@ builds:
     goarch: [amd64]
 
 archives:
-  - format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+  - name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - CONTRIBUTING.md
@@ -39,7 +39,7 @@ scoops:
     repository:
       owner: qamarudeenm
       name: scoop-bucket
-    homepage: https://github.com/minisky-io/minisky
+    homepage: https://github.com/qamarudeenm/minisky
     description: High-fidelity local GCP emulator.
     license: MIT
 
@@ -47,22 +47,21 @@ nfpms:
   - id: minisky-pkg
     package_name: minisky
     vendor: MiniSky Open Source
-    homepage: https://github.com/minisky-io/minisky
+    homepage: https://github.com/qamarudeenm/minisky
     maintainer: MiniSky Team <maintainers@minisky.dev>
     description: High-fidelity local GCP emulator.
     license: MIT
     formats:
       - deb
       - rpm
-# contents is removed to avoid collision as GoReleaser includes the binary by default
 
-brews:
+homebrews:
   - name: minisky
     repository:
       owner: qamarudeenm
       name: homebrew-tap
     directory: Formula
-    homepage: https://github.com/minisky-io/minisky
+    homepage: https://github.com/qamarudeenm/minisky
     description: High-fidelity local GCP emulator.
     install: |
       bin.install "minisky"
@@ -72,8 +71,18 @@ brews:
 checksum:
   name_template: 'checksums.txt'
 
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+release:
+  github:
+    owner: qamarudeenm
+    name: minisky
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## MiniSky v1.0.0 - Analytical Engine & BigQuery Support
+    This release brings high-fidelity BigQuery emulation powered by DuckDB.
+  footer: |
+    **Full Changelog**: https://github.com/qamarudeenm/minisky/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 changelog:
   sort: asc
@@ -81,3 +90,4 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+      - '^chore:'
