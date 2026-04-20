@@ -15,6 +15,7 @@ terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/minisky-sa-key.json
+terraform/.terraform.*.hcl
 
 # Go
 vendor/
@@ -60,3 +61,5 @@ docs/project description.txt
 docs/service-catalog.md
 docs/task.md
 docs/ui-component-architecture.md
+docs/marketing-posts.md
+.claude
