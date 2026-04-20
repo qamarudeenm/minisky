@@ -37,7 +37,7 @@ archives:
 scoops:
   - name: minisky
     repository:
-      owner: minisky-io
+      owner: qamarudeenm
       name: scoop-bucket
     homepage: https://github.com/minisky-io/minisky
     description: High-fidelity local GCP emulator.
@@ -59,7 +59,7 @@ nfpms:
 brews:
   - name: minisky
     repository:
-      owner: minisky-io
+      owner: qamarudeenm
       name: homebrew-tap
     directory: Formula
     homepage: https://github.com/minisky-io/minisky
