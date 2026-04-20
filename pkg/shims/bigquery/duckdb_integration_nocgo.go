@@ -4,7 +4,6 @@ package bigquery
 
 import (
 	"fmt"
-	"log"
 )
 
 // DuckDBBackend is a mock version for platforms without CGO (like Windows native build).
