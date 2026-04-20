@@ -12,16 +12,11 @@ import StopIcon from '@mui/icons-material/Stop';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useProjectContext } from '../contexts/ProjectContext';
+import TerminalDrawer from './TerminalDrawer';
 
 const ZONE = 'us-central1-a';
 
-const OS_IMAGES: Record<string, string> = {
-  'ubuntu:latest': 'Ubuntu 22.04 LTS',
-  'debian:latest': 'Debian 12',
-  'centos:latest': 'CentOS 7',
-  'rockylinux:latest': 'Rocky Linux 9',
-  'alpine:latest': 'Alpine Linux',
-};
+// Dynamic OS images loaded from /api/config/images
 
 type Instance = {
   name: string;
@@ -41,11 +36,13 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(false);
   const [vmName, setVmName] = useState('');
-  const [osImage, setOsImage] = useState('ubuntu:latest');
+  const [osImage, setOsImage] = useState('ubuntu:26.04');
+  const [availableImages, setAvailableImages] = useState<{label: string, image: string}[]>([]);
   const [machineType, setMachineType] = useState('n1-standard-1');
   const [vpcName, setVpcName] = useState('default');
   const [networks, setNetworks] = useState<{name: string}[]>([]);
   const [toast, setToast] = useState({ msg: '', open: false, severity: 'success' as 'success' | 'error' });
+  const [terminalContainer, setTerminalContainer] = useState<string | null>(null);
 
   const showToast = (msg: string, severity: 'success' | 'error' = 'success') =>
     setToast({ msg, open: true, severity });
@@ -71,6 +68,15 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
       fetch(`/api/manage/compute/projects/${activeProject}/global/networks`)
         .then(r => r.json())
         .then(d => setNetworks(d.items || []))
+        .catch(console.error);
+
+      fetch('/api/config/images')
+        .then(r => r.json())
+        .then(d => {
+          if (d.compute?.os_images) {
+            setAvailableImages(d.compute.os_images);
+          }
+        })
         .catch(console.error);
 
       // Poll status every 3s to catch PROVISIONING→RUNNING transitions
@@ -181,8 +187,8 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
             <FormControl size="small" sx={{ minWidth: 180 }}>
               <InputLabel>OS Image</InputLabel>
               <Select value={osImage} label="OS Image" onChange={e => setOsImage(e.target.value)}>
-                {Object.entries(OS_IMAGES).map(([val, label]) => (
-                  <MenuItem key={val} value={val}>{label}</MenuItem>
+                {availableImages.map((img) => (
+                  <MenuItem key={img.image} value={img.image}>{img.label}</MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -260,16 +266,16 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
                     </TableCell>
                     <TableCell align="right">
                       <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
-                        <Tooltip title={`SSH: ${sshCommand(inst.name)}`}>
+                        <Tooltip title={`SSH into ${inst.name}`}>
                           <IconButton
                             size="small"
                             sx={{ color: '#1a73e8' }}
-                            onClick={() => copyToClipboard(sshCommand(inst.name))}
+                            onClick={() => setTerminalContainer(`minisky-vm-${inst.name}`)}
                           >
                             <TerminalIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="Copy SSH command">
+                        <Tooltip title="Copy SSH command (bash)">
                           <IconButton size="small" onClick={() => copyToClipboard(sshCommand(inst.name))}>
                             <ContentCopyIcon sx={{ fontSize: 14 }} />
                           </IconButton>
@@ -313,6 +319,12 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
           )}
         </Box>
       </Drawer>
+
+      <TerminalDrawer 
+        open={!!terminalContainer} 
+        onClose={() => setTerminalContainer(null)} 
+        containerName={terminalContainer || ''} 
+      />
 
       <Snackbar
         open={toast.open}

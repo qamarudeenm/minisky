@@ -21,21 +21,29 @@ package serverless
 // ─────────────────────────────────────────────────────────────────────────────
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
+
+	"minisky/pkg/orchestrator"
 )
 
 // BuildpacksBackend manages local container builds via Google Cloud Buildpacks.
 type BuildpacksBackend struct {
-	enabled bool
-	builder string // Buildpacks builder image to use
+	enabled  bool
+	builder  string // Buildpacks builder image to use
+	logStore map[string]*bytes.Buffer
+	logMu    sync.RWMutex
 }
 
-// DefaultBuilder is the Google-22 stack builder that mirrors GCP's build environment.
-const DefaultBuilder = "gcr.io/buildpacks/builder:google-22"
+// DefaultBuilder is the Google-24 stack builder that mirrors GCP's latest build environment.
+const DefaultBuilder = "gcr.io/buildpacks/builder:google-24"
 
 // NewBuildpacksBackend returns a BuildpacksBackend. Only active when
 // MINISKY_SERVERLESS_BACKEND=buildpacks is set.
@@ -46,13 +54,26 @@ func NewBuildpacksBackend() *BuildpacksBackend {
 		builder = DefaultBuilder
 	}
 
-	b := &BuildpacksBackend{enabled: enabled, builder: builder}
+	b := &BuildpacksBackend{
+		enabled:  enabled,
+		builder:  builder,
+		logStore: make(map[string]*bytes.Buffer),
+	}
 
 	if enabled {
-		if _, err := exec.LookPath("pack"); err != nil {
-			log.Printf("[Buildpacks] WARNING: MINISKY_SERVERLESS_BACKEND=buildpacks but 'pack' CLI not found. Falling back to in-memory simulation.")
-			b.enabled = false
-		} else {
+		binPath := orchestrator.GetPackBinaryName()
+		if _, err := exec.LookPath(binPath); err != nil {
+			// Fallback: check local bin
+			localPack := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+			if _, err := os.Stat(localPack); err == nil {
+				binPath = localPack
+			} else {
+				log.Printf("[Buildpacks] WARNING: MINISKY_SERVERLESS_BACKEND=buildpacks but 'pack' CLI not found. Falling back to in-memory simulation.")
+				b.enabled = false
+			}
+		}
+
+		if b.enabled {
 			log.Printf("[Buildpacks] ✅ Buildpacks integration ENABLED (builder: %s)", builder)
 		}
 	}
@@ -66,9 +87,13 @@ func (b *BuildpacksBackend) Enabled() bool { return b.enabled }
 func (b *BuildpacksBackend) SetEnabled(enabled bool) error {
 	b.enabled = enabled
 	if enabled {
-		if _, err := exec.LookPath("pack"); err != nil {
-			b.enabled = false
-			return fmt.Errorf("'pack' CLI not found, cannot enable")
+		binPath := orchestrator.GetPackBinaryName()
+		if _, err := exec.LookPath(binPath); err != nil {
+			localPack := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+			if _, err := os.Stat(localPack); err != nil {
+				b.enabled = false
+				return fmt.Errorf("'pack' CLI not found, cannot enable")
+			}
 		}
 		log.Printf("[Buildpacks] dynamically ENABLED via UI")
 	} else {
@@ -77,12 +102,17 @@ func (b *BuildpacksBackend) SetEnabled(enabled bool) error {
 	return nil
 }
 
+func (b *BuildpacksBackend) GetLogs(name string) string {
+	b.logMu.RLock()
+	defer b.logMu.RUnlock()
+	if buf, ok := b.logStore[name]; ok {
+		return buf.String()
+	}
+	return ""
+}
+
 // BuildFunction builds a Docker image for a Cloud Function source directory.
-// Returns the image name and the local port where the container is started.
-//
-//   sourcePath — local directory containing the function source code.
-//   functionName — used to name the Docker image (minisky-fn-<name>).
-func (b *BuildpacksBackend) BuildFunction(functionName, sourcePath string) (imageRef string, err error) {
+func (b *BuildpacksBackend) BuildFunction(functionName, sourcePath, entryPoint string) (imageRef string, err error) {
 	if !b.enabled {
 		return "", fmt.Errorf("buildpacks backend not enabled")
 	}
@@ -90,13 +120,28 @@ func (b *BuildpacksBackend) BuildFunction(functionName, sourcePath string) (imag
 	imageRef = fmt.Sprintf("minisky-fn-%s:local", sanitizeImageName(functionName))
 	log.Printf("[Buildpacks] Building image %s from %s using builder %s", imageRef, sourcePath, b.builder)
 
-	cmd := exec.Command("pack", "build", imageRef,
-		"--path", sourcePath,
-		"--builder", b.builder,
-		"--trust-builder",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	binPath := orchestrator.GetPackBinaryName()
+	localPack := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+	if _, err := os.Stat(localPack); err == nil {
+		binPath = localPack
+	}
+
+	// Force shell to see the version and allow internet access for dependencies
+	// Crucially, we pass GOOGLE_FUNCTION_TARGET at build time so the buildpacks 
+	// can generate the correct entrypoint metadata.
+	cmdArgs := []string{"-c", fmt.Sprintf("DOCKER_API_VERSION=1.44 %s build %s --path %s --builder %s --trust-builder --network host --env GOOGLE_FUNCTION_TARGET=%s --env GOOGLE_FUNCTION_SIGNATURE_TYPE=http", binPath, imageRef, sourcePath, b.builder, entryPoint)}
+	cmd := exec.Command("sh", cmdArgs...)
+	cmd.Env = os.Environ()
+	if os.Getenv("DOCKER_API_VERSION") == "" {
+		cmd.Env = append(cmd.Env, "DOCKER_API_VERSION=1.44")
+	}
+
+	buf := new(bytes.Buffer)
+	b.logMu.Lock()
+	b.logStore[functionName] = buf
+	b.logMu.Unlock()
+	cmd.Stdout = io.MultiWriter(os.Stdout, buf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, buf)
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("pack build failed for '%s': %w", functionName, err)
@@ -107,7 +152,6 @@ func (b *BuildpacksBackend) BuildFunction(functionName, sourcePath string) (imag
 }
 
 // BuildService builds a Docker image for a Cloud Run service.
-// Same mechanics as BuildFunction but uses different environment variable injection.
 func (b *BuildpacksBackend) BuildService(serviceName, sourcePath string) (imageRef string, err error) {
 	if !b.enabled {
 		return "", fmt.Errorf("buildpacks backend not enabled")
@@ -116,15 +160,25 @@ func (b *BuildpacksBackend) BuildService(serviceName, sourcePath string) (imageR
 	imageRef = fmt.Sprintf("minisky-svc-%s:local", sanitizeImageName(serviceName))
 	log.Printf("[Buildpacks] Building image %s from %s", imageRef, sourcePath)
 
-	cmd := exec.Command("pack", "build", imageRef,
-		"--path", sourcePath,
-		"--builder", b.builder,
-		"--trust-builder",
-		// Inject the PORT env var as expected by Cloud Run containers
-		"--env", "PORT=8080",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	binPath := orchestrator.GetPackBinaryName()
+	localPack := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+	if _, err := os.Stat(localPack); err == nil {
+		binPath = localPack
+	}
+
+	cmdArgs := []string{"-c", fmt.Sprintf("DOCKER_API_VERSION=1.44 %s build %s --path %s --builder %s --trust-builder --network host --env PORT=8080", binPath, imageRef, sourcePath, b.builder)}
+	cmd := exec.Command("sh", cmdArgs...)
+	cmd.Env = os.Environ()
+	if os.Getenv("DOCKER_API_VERSION") == "" {
+		cmd.Env = append(cmd.Env, "DOCKER_API_VERSION=1.44")
+	}
+
+	buf := new(bytes.Buffer)
+	b.logMu.Lock()
+	b.logStore[serviceName] = buf
+	b.logMu.Unlock()
+	cmd.Stdout = io.MultiWriter(os.Stdout, buf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, buf)
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("pack build failed for service '%s': %w", serviceName, err)
@@ -134,60 +188,27 @@ func (b *BuildpacksBackend) BuildService(serviceName, sourcePath string) (imageR
 	return imageRef, nil
 }
 
-// StartContainer starts a Docker container from imageRef and returns its local URL.
-// Used by the Serverless shim to provide a real invocation URL for the function/service.
-func (b *BuildpacksBackend) StartContainer(name, imageRef string, envVars map[string]string) (localURL string, err error) {
-	if !b.enabled {
-		return "", fmt.Errorf("buildpacks backend not enabled")
-	}
-
-	containerName := "minisky-serverless-" + sanitizeImageName(name)
-	args := []string{
-		"run", "-d",
-		"--rm",
-		"--name", containerName,
-		"-p", "0:8080", // allocate a random host port
-		"--network", "minisky-net",
-	}
-	for k, v := range envVars {
-		args = append(args, "-e", k+"="+v)
-	}
-	args = append(args, imageRef)
-
-	out, err := exec.Command("docker", args...).Output()
+// DownloadSourceFromGCS retrieves a zip archive from the storage emulator and extracts it.
+func (b *BuildpacksBackend) DownloadSourceFromGCS(bucket, object string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "minisky-source-")
 	if err != nil {
-		return "", fmt.Errorf("docker run failed: %w", err)
+		return "", err
 	}
 
-	containerID := strings.TrimSpace(string(out))
-	log.Printf("[Buildpacks] Started container %s (ID: %.12s)", containerName, containerID)
+	// Hit the GCS emulator (linked to host port 4443)
+	url := fmt.Sprintf("http://localhost:4443/storage/v1/b/%s/o/%s?alt=media", bucket, object)
+	log.Printf("[Buildpacks] Downloading source from GCS: %s", url)
 
-	// Discover the allocated host port
-	portOut, err := exec.Command("docker", "port", containerID, "8080").Output()
-	if err != nil {
-		return "", fmt.Errorf("cannot discover container port: %w", err)
+	cmd := exec.Command("curl", "-L", "-o", tmpDir+"/source.zip", url)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to download source from GCS: %w", err)
 	}
 
-	// portOut looks like "0.0.0.0:PORT\n"
-	portStr := strings.TrimSpace(string(portOut))
-	parts := strings.Split(portStr, ":")
-	if len(parts) < 2 {
-		return "", fmt.Errorf("unexpected docker port output: %s", portStr)
-	}
+	// Extract
+	unzipCmd := exec.Command("unzip", "-q", "-d", tmpDir, tmpDir+"/source.zip")
+	unzipCmd.Run() // ignore errors if it wasn't a zip (might be a raw dir if we were fancy)
 
-	port := parts[len(parts)-1]
-	localURL = "http://localhost:" + port
-	log.Printf("[Buildpacks] ✅ Container listening at %s", localURL)
-	return localURL, nil
-}
-
-// StopContainer stops a running minisky-serverless-* container.
-func (b *BuildpacksBackend) StopContainer(name string) error {
-	if !b.enabled {
-		return nil
-	}
-	containerName := "minisky-serverless-" + sanitizeImageName(name)
-	return exec.Command("docker", "stop", containerName).Run()
+	return tmpDir, nil
 }
 
 func sanitizeImageName(name string) string {

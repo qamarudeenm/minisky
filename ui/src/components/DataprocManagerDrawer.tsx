@@ -3,7 +3,7 @@ import {
   Drawer, Box, Typography, IconButton, Button,
   Snackbar, Alert, Dialog,
   DialogTitle, DialogContent, DialogActions, Paper,
-  TextField, Chip, Tabs, Tab
+  TextField, Chip, Tabs, Tab, FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -12,9 +12,14 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useProjectContext } from '../contexts/ProjectContext';
 
-type DataprocManagerDrawerProps = { open: boolean; onClose: () => void };
+type DataprocManagerDrawerProps = { 
+  open: boolean; 
+  onClose: () => void;
+  onOpenStorage?: () => void;
+  onOpenBigQuery?: () => void;
+};
 
-export default function DataprocManagerDrawer({ open, onClose }: DataprocManagerDrawerProps) {
+export default function DataprocManagerDrawer({ open, onClose, onOpenStorage, onOpenBigQuery }: DataprocManagerDrawerProps) {
   const { activeProject } = useProjectContext();
   const [clusters, setClusters] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -26,6 +31,8 @@ export default function DataprocManagerDrawer({ open, onClose }: DataprocManager
   const [newClusterOpen, setNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [numWorkers, setNumWorkers] = useState(2);
+  const [selectedVersion, setSelectedVersion] = useState('4.0');
+  const [availableVersions, setAvailableVersions] = useState<any[]>([]);
 
   // Job Dialog
   const [newJobOpen, setNewJobOpen] = useState(false);
@@ -56,7 +63,16 @@ export default function DataprocManagerDrawer({ open, onClose }: DataprocManager
   }, [apiRoot]);
 
   useEffect(() => {
-    if (open) loadData();
+    if (open) {
+      loadData();
+      fetch('/api/config/images')
+        .then(r => r.json())
+        .then(d => {
+          setAvailableVersions(d.dataproc?.versions || []);
+          if (d.dataproc?.latest) setSelectedVersion(d.dataproc.latest);
+        })
+        .catch(console.error);
+    }
   }, [open, loadData]);
 
   const handleCreateCluster = async () => {
@@ -66,7 +82,8 @@ export default function DataprocManagerDrawer({ open, onClose }: DataprocManager
         clusterName: newClusterName,
         config: {
           masterConfig: { numInstances: 1, machineTypeUri: 'n1-standard-4' },
-          workerConfig: { numInstances: numWorkers, machineTypeUri: 'n1-standard-4' }
+          workerConfig: { numInstances: numWorkers, machineTypeUri: 'n1-standard-4' },
+          softwareConfig: { imageVersion: selectedVersion }
         }
       };
       const res = await fetch(`${apiRoot}/clusters`, {
@@ -133,8 +150,27 @@ export default function DataprocManagerDrawer({ open, onClose }: DataprocManager
             </Box>
           </Box>
 
-          <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'white', px: 3 }}>
-            <Tabs value={activeTab} onChange={(_e, v) => setActiveTab(v)}>
+          <Box sx={{ p: 3 }}>
+            
+            {/* Quick Setup Resources */}
+            <Paper elevation={0} sx={{ p: 2, mb: 4, bgcolor: '#e8f0fe', border: '1px solid #1a73e8', borderRadius: 2 }}>
+              <Typography variant="subtitle2" sx={{ color: '#1a73e8', fontWeight: 600, mb: 1, display: 'flex', alignItems: 'center' }}>
+                <span style={{ marginRight: '8px' }}>💡</span> Resource Prerequisites
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#5f6368', mb: 2 }}>
+                Spark jobs typically require a GCS bucket for staging and a BigQuery dataset for output. Use these shortcuts to set them up quickly:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button size="small" variant="outlined" sx={{ bgcolor: 'white' }} onClick={onOpenStorage}>
+                  Setup GCS Bucket
+                </Button>
+                <Button size="small" variant="outlined" sx={{ bgcolor: 'white' }} onClick={onOpenBigQuery}>
+                  Setup BQ Dataset
+                </Button>
+              </Box>
+            </Paper>
+
+            <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ mb: 3, borderBottom: '1px solid #dadce0' }}>
               <Tab label="Clusters" />
               <Tab label="Jobs" />
             </Tabs>
@@ -185,7 +221,15 @@ export default function DataprocManagerDrawer({ open, onClose }: DataprocManager
                           <Chip size="small" label={j.status?.state} color={j.status?.state === 'DONE' ? 'success' : j.status?.state === 'ERROR' ? 'error' : 'primary'} />
                         </Box>
                         <Typography variant="body2" sx={{ color: '#5f6368' }}>Cluster: <strong>{j.placement?.clusterName}</strong></Typography>
-                        <Typography variant="body2" sx={{ color: '#5f6368' }}>Entrypoint: <strong>{j.pysparkJob?.mainPythonFileUri || j.sparkJob?.mainJarFileUri}</strong></Typography>
+                        <Typography variant="body2" sx={{ color: '#5f6368', mb: 1 }}>Entrypoint: <strong>{j.pysparkJob?.mainPythonFileUri || j.sparkJob?.mainJarFileUri}</strong></Typography>
+                        
+                        {j.status?.details && (
+                          <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#f1f3f4', borderRadius: 1, border: '1px solid #dadce0', maxHeight: 200, overflow: 'auto' }}>
+                             <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap', color: j.status.state === 'ERROR' ? 'error.main' : 'inherit' }}>
+                               {j.status.details}
+                             </Typography>
+                          </Box>
+                        )}
                       </Paper>
                     ))}
                   </Box>
@@ -201,9 +245,28 @@ export default function DataprocManagerDrawer({ open, onClose }: DataprocManager
         <DialogContent sx={{ width: 400 }}>
           <TextField autoFocus margin="dense" label="Cluster Name" fullWidth variant="outlined"
                      value={newClusterName} onChange={e => setNewClusterName(e.target.value.replace(/[^a-zA-Z0-9-]/g, ''))} sx={{ mb: 3, mt: 1 }} />
+          
+          <FormControl fullWidth sx={{ mb: 3 }}>
+            <InputLabel>Spark Version</InputLabel>
+            <Select
+              value={selectedVersion}
+              label="Spark Version"
+              onChange={(e) => setSelectedVersion(e.target.value)}
+            >
+              {availableVersions.map(v => (
+                <MenuItem key={v.version} value={v.version}>
+                  {v.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
           <TextField margin="dense" label="Number of Worker Nodes" fullWidth variant="outlined" type="number"
-                     value={numWorkers} onChange={e => setNumWorkers(parseInt(e.target.value) || 0)} sx={{ mb: 1 }} />
-          <Typography variant="caption" sx={{ color: '#5f6368' }}>Note: Each node provisions a physical bitnami/spark:3.5 container.</Typography>
+                     value={numWorkers} onChange={e => setNumWorkers(parseInt(e.target.value) || 0)} sx={{ mb: 2 }} />
+          
+          <Typography variant="caption" sx={{ color: '#5f6368', display: 'block', mt: 1 }}>
+            Note: Provisioning official Bitnami Spark containers for master and worker nodes.
+          </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 0 }}>
           <Button onClick={() => setNewClusterOpen(false)}>Cancel</Button>

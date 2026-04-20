@@ -1,0 +1,84 @@
+{
+  "emulators": {
+    "storage.googleapis.com": {
+      "name": "minisky-gcs",
+      "image": "fsouza/fake-gcs-server:latest",
+      "port": "4443/tcp",
+      "cmd": ["-scheme", "http"]
+    },
+    "pubsub.googleapis.com": {
+      "name": "minisky-pubsub",
+      "image": "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
+      "port": "8085/tcp",
+      "cmd": ["gcloud", "beta", "emulators", "pubsub", "start", "--host-port=0.0.0.0:8085"]
+    },
+    "firestore.googleapis.com": {
+      "name": "minisky-firestore",
+      "image": "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
+      "port": "8082/tcp",
+      "cmd": ["gcloud", "beta", "emulators", "firestore", "start", "--host-port=0.0.0.0:8082"]
+    },
+    "bigtable.googleapis.com": {
+      "name": "minisky-bigtable",
+      "image": "google/cloud-sdk:latest",
+      "port": "8086/tcp",
+      "cmd": ["gcloud", "beta", "emulators", "bigtable", "start", "--host-port=0.0.0.0:8086"]
+    },
+    "datastore.googleapis.com": {
+      "name": "minisky-datastore",
+      "image": "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
+      "port": "8081/tcp",
+      "cmd": ["gcloud", "beta", "emulators", "datastore", "start", "--host-port=0.0.0.0:8081", "--data-dir=/data"],
+      "volume": "./data/datastore:/data"
+    },
+    "spanner.googleapis.com": {
+      "name": "minisky-spanner",
+      "image": "gcr.io/cloud-spanner-emulator/emulator",
+      "port": "9020/tcp",
+      "cmd": []
+    }
+  },
+  "compute": {
+    "os_images": [
+      { "id": "ubuntu-2604-lts", "label": "Ubuntu 26.04 LTS", "image": "ubuntu:26.04" },
+      { "id": "ubuntu-2404-lts", "label": "Ubuntu 24.04 LTS", "image": "ubuntu:24.04" },
+      { "id": "ubuntu-2204-lts", "label": "Ubuntu 22.04 LTS", "image": "ubuntu:22.04" },
+      { "id": "debian-12", "label": "Debian 12 Bookworm", "image": "debian:12" },
+      { "id": "rocky-9", "label": "Rocky Linux 9", "image": "rockylinux:9" }
+    ],
+    "default_image": "ubuntu:26.04"
+  },
+  "sql": {
+    "postgres": {
+      "latest": "18.3",
+      "versions": [
+        { "version": "18", "label": "PostgreSQL 18 (Latest)", "image": "postgres:18.3-alpine" },
+        { "version": "17", "label": "PostgreSQL 17", "image": "postgres:17.9-alpine" },
+        { "version": "16", "label": "PostgreSQL 16", "image": "postgres:16.13-alpine" }
+      ],
+      "default_image": "postgres:18.3-alpine"
+    },
+    "mysql": {
+      "latest": "8.4",
+      "versions": [
+        { "version": "9.0", "label": "MySQL 9.0 Innovation", "image": "mysql:9.0" },
+        { "version": "8.4", "label": "MySQL 8.4 LTS", "image": "mysql:8.4" },
+        { "version": "8.0", "label": "MySQL 8.0 (Legacy)", "image": "mysql:8.0" }
+      ],
+      "default_image": "mysql:8.4"
+    }
+  },
+  "serverless": {
+    "builder": "gcr.io/buildpacks/builder:google-24"
+  },
+  "dataproc": {
+    "latest": "4.0",
+    "versions": [
+      { "version": "4.0", "label": "Spark 4.0 (Latest)", "image": "bitnami/spark:4.0" },
+      { "version": "3.5", "label": "Spark 3.5", "image": "bitnami/spark:3.5" },
+      { "version": "3.4", "label": "Spark 3.4", "image": "bitnami/spark:3.4" }
+    ],
+    "default_image": "bitnami/spark:4.0",
+    "master_ports": ["8080/tcp"]
+  }
+}

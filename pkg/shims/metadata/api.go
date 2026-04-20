@@ -7,7 +7,15 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"minisky/pkg/registry"
 )
+
+func init() {
+	registry.Register("metadata.google.internal", func(ctx *registry.Context) http.Handler {
+		return NewAPI()
+	})
+}
 
 // instanceMetadata holds per-VM metadata injected at container start time.
 // The zero value is safe and returns sensible local-dev defaults.

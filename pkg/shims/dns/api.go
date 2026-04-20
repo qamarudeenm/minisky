@@ -8,7 +8,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"minisky/pkg/registry"
 )
+
+func init() {
+	registry.Register("dns.googleapis.com", func(ctx *registry.Context) http.Handler {
+		return NewAPI()
+	})
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resource types

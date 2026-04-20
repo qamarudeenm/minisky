@@ -1,12 +1,14 @@
 package orchestrator
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"minisky/pkg/config"
 	"net"
 	"net/http"
 	"os"
@@ -33,6 +35,7 @@ type ContainerConfig struct {
 	Image         string
 	ContainerPort string // e.g. "4443/tcp"
 	Cmd           []string
+	Volume        string
 }
 
 // PortMapping tracks a host:container port pair for a VM.
@@ -53,31 +56,11 @@ type FirewallEntry struct {
 	Ranges    []string // CIDR source/dest ranges
 }
 
-// registry maps GCP API domains to their Docker emulator payloads.
-// NOTE: No HostPort is registered — MiniSky connects via the internal bridge IP.
-var registry = map[string]ContainerConfig{
-	"storage.googleapis.com": {
-		Name:          "minisky-gcs",
-		Image:         "fsouza/fake-gcs-server:latest",
-		ContainerPort: "4443/tcp",
-		Cmd:           []string{"-scheme", "http"},
-	},
-	"pubsub.googleapis.com": {
-		Name:          "minisky-pubsub",
-		Image:         "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
-		ContainerPort: "8085/tcp",
-		Cmd:           []string{"gcloud", "beta", "emulators", "pubsub", "start", "--host-port=0.0.0.0:8085"},
-	},
-	"firestore.googleapis.com": {
-		Name:          "minisky-firestore",
-		Image:         "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
-		ContainerPort: "8082/tcp",
-		Cmd:           []string{"gcloud", "beta", "emulators", "firestore", "start", "--host-port=0.0.0.0:8082"},
-	},
-}
-
 func NewServiceManager() (*ServiceManager, error) {
 	sockPath := resolveDockerSocket()
+	if os.Getenv("DOCKER_HOST") == "" { 
+		os.Setenv("DOCKER_HOST", "unix://"+sockPath); 
+	}
 	log.Printf("[ServiceManager] Docker socket resolved: %s", sockPath)
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -130,64 +113,83 @@ func (sm *ServiceManager) EnsureNetwork(ctx context.Context) error {
 
 // EnsureServiceRunning boots the container if needed and returns its internal bridge URL.
 func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain string) (string, error) {
-	config, exists := registry[domain]
+	reg := config.GetImageRegistry()
+	cfg, exists := reg.Emulators[domain]
 	if !exists {
 		// Native Go shims never need Docker containers
 		return "", nil
 	}
 
-	status, err := sm.checkStatus(config.Name)
+	// Map config to internal ContainerConfig
+	iconfig := ContainerConfig{
+		Name:          cfg.Name,
+		Image:         cfg.Image,
+		ContainerPort: cfg.Port,
+		Cmd:           cfg.Cmd,
+		Volume:        cfg.Volume,
+	}
+
+	status, err := sm.checkStatus(cfg.Name)
 	if err != nil {
 		return "", fmt.Errorf("status check failed: %v", err)
 	}
 
 	if status != "running" {
-		log.Printf("[Orchestrator] Cold-starting '%s' for domain '%s'...", config.Name, domain)
+		log.Printf("[Orchestrator] Cold-starting '%s' for domain '%s'...", iconfig.Name, domain)
 		if status == "not_found" {
-			if err := sm.pullImage(config.Image); err != nil {
-				log.Printf("[Orchestrator] Image pull warning: %v", err)
+			exists, err := sm.imageExists(iconfig.Image)
+			if err != nil {
+				log.Printf("[Orchestrator] Image check error: %v", err)
 			}
-			if err := sm.createContainer(config); err != nil {
+			if !exists {
+				if err := sm.pullImage(iconfig.Image); err != nil {
+					log.Printf("[Orchestrator] Image pull warning: %v", err)
+				}
+			} else {
+				log.Printf("[Orchestrator] Image '%s' already exists locally, skipping pull.", iconfig.Image)
+			}
+			if err := sm.createContainer(iconfig); err != nil {
 				return "", fmt.Errorf("create container: %v", err)
 			}
 		}
-		if err := sm.startContainer(config.Name); err != nil {
+		if err := sm.startContainer(iconfig.Name); err != nil {
 			return "", fmt.Errorf("start container: %v", err)
 		}
 	}
 
 	// Discover the internal bridge IP — no host port binding needed
-	internalURL, err := sm.discoverInternalURL(config)
+	internalURL, err := sm.discoverInternalURL(iconfig)
 	if err != nil {
 		return "", fmt.Errorf("port discovery: %v", err)
 	}
 
 	// Wait until the emulator is truly ready inside the network
-	containerPort := strings.Split(config.ContainerPort, "/")[0]
+	containerPort := strings.Split(iconfig.ContainerPort, "/")[0]
 	internalAddr := strings.TrimPrefix(internalURL, "http://")
 	if err := sm.waitUntilReady(internalAddr, 20*time.Second); err != nil {
 		return "", fmt.Errorf("readiness probe failed: %v", err)
 	}
 
-	log.Printf("[Orchestrator] ✅ '%s' is ONLINE at internal %s (port %s)", config.Name, internalURL, containerPort)
+	log.Printf("[Orchestrator] ✅ '%s' is ONLINE at internal %s (port %s)", iconfig.Name, internalURL, containerPort)
 	return internalURL, nil
 }
 
 // StopServiceContainer stops the underlying docker container for a given service domain.
 func (sm *ServiceManager) StopServiceContainer(ctx context.Context, domain string) error {
-	config, exists := registry[domain]
+	reg := config.GetImageRegistry()
+	cfg, exists := reg.Emulators[domain]
 	if !exists {
 		return fmt.Errorf("domain %s not found in registry", domain)
 	}
 
-	status, err := sm.checkStatus(config.Name)
+	status, err := sm.checkStatus(cfg.Name)
 	if err != nil {
 		return fmt.Errorf("status check failed: %v", err)
 	}
 
 	if status == "running" {
-		log.Printf("[Orchestrator] Stopping service container '%s'...", config.Name)
-		stopURL := fmt.Sprintf("http://localhost/containers/%s/stop", config.Name)
+		log.Printf("[Orchestrator] Stopping service container '%s'...", cfg.Name)
+		stopURL := fmt.Sprintf("http://localhost/containers/%s/stop", cfg.Name)
 		req, _ := http.NewRequestWithContext(ctx, "POST", stopURL, nil)
 		resp, err := sm.dockerClient.Do(req)
 		if err != nil {
@@ -197,9 +199,9 @@ func (sm *ServiceManager) StopServiceContainer(ctx context.Context, domain strin
 		if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotModified {
 			return fmt.Errorf("stop rejected %d", resp.StatusCode)
 		}
-		log.Printf("[Orchestrator] Container '%s' stopped successfully.", config.Name)
+		log.Printf("[Orchestrator] Container '%s' stopped successfully.", cfg.Name)
 	} else {
-		log.Printf("[Orchestrator] Container '%s' is already not running (status: %s)", config.Name, status)
+		log.Printf("[Orchestrator] Container '%s' is already not running (status: %s)", cfg.Name, status)
 	}
 
 	return nil
@@ -236,15 +238,16 @@ func (sm *ServiceManager) discoverInternalURL(config ContainerConfig) (string, e
 
 // Teardown stops and removes all minisky-* containers and the minisky-net network.
 func (sm *ServiceManager) Teardown(ctx context.Context) {
-	for _, config := range registry {
-		stopURL := fmt.Sprintf("http://localhost/containers/%s/stop", config.Name)
+	reg := config.GetImageRegistry()
+	for _, cfg := range reg.Emulators {
+		stopURL := fmt.Sprintf("http://localhost/containers/%s/stop", cfg.Name)
 		req, _ := http.NewRequestWithContext(ctx, "POST", stopURL, nil)
 		sm.dockerClient.Do(req)
 
-		rmURL := fmt.Sprintf("http://localhost/containers/%s?force=true", config.Name)
+		rmURL := fmt.Sprintf("http://localhost/containers/%s?force=true", cfg.Name)
 		req, _ = http.NewRequestWithContext(ctx, "DELETE", rmURL, nil)
 		sm.dockerClient.Do(req)
-		log.Printf("[Orchestrator] Removed container '%s'", config.Name)
+		log.Printf("[Orchestrator] Removed container '%s'", cfg.Name)
 	}
 	rmNetURL := "http://localhost/networks/" + networkName
 	req, _ := http.NewRequestWithContext(ctx, "DELETE", rmNetURL, nil)
@@ -286,13 +289,39 @@ func (sm *ServiceManager) pullImage(image string) error {
 	return nil
 }
 
+func (sm *ServiceManager) imageExists(image string) (bool, error) {
+	// Docker inspect image endpoint
+	url := fmt.Sprintf("http://localhost/images/%s/json", image)
+	resp, err := sm.dockerClient.Get(url)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+}
+
 // ProvisionComputeVM actively boots a Data Plane Docker container mimicking a GCE VM.
 // To keep it permanently running for SSH, we use `tail -f /dev/null`.
-func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcName string, ports []string) error {
-	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpc: %s ports: %d)", containerName, osImage, vpcName, len(ports))
+func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcName string, ports []string, env []string) error {
+	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpc: %s ports: %d env: %d)", containerName, osImage, vpcName, len(ports), len(env))
 	
-	if err := sm.pullImage(osImage); err != nil {
-		log.Printf("[Orchestrator] Data Plane pull warning for %s: %v", osImage, err)
+	exists, err := sm.imageExists(osImage)
+	if err != nil {
+		log.Printf("[Orchestrator] Image check error for %s: %v", osImage, err)
+	}
+	if !exists {
+		if err := sm.pullImage(osImage); err != nil {
+			log.Printf("[Orchestrator] Data Plane pull warning for %s: %v", osImage, err)
+		}
+	} else {
+		log.Printf("[Orchestrator] Image '%s' already exists locally, skipping pull.", osImage)
 	}
 
 	netMode := networkName
@@ -315,6 +344,7 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 	payload := map[string]interface{}{
 		"Image":        osImage,
 		"Cmd":          []string{"tail", "-f", "/dev/null"},
+		"Env":          env,
 		"ExposedPorts": exposedPorts,
 		"HostConfig": map[string]interface{}{
 			"NetworkMode":  netMode,
@@ -350,23 +380,44 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 	var env []string
 	var expPort string
 
+	reg := config.GetImageRegistry()
 	if strings.HasPrefix(version, "POSTGRES") {
-		parts := strings.Split(version, "_")
-		if len(parts) > 1 {
-			image = "postgres:" + parts[1]
-		} else {
-			image = "postgres:15"
+		// Version can be "POSTGRES_18", "POSTGRES_17", or just "POSTGRES"
+		vparts := strings.Split(version, "_")
+		if len(vparts) > 1 {
+			targetV := vparts[1]
+			for _, v := range reg.Sql.Postgres.Versions {
+				if v.Version == targetV {
+					image = v.Image
+					break
+				}
+			}
 		}
-		env = []string{"POSTGRES_PASSWORD=" + rootPassword}
+		if image == "" {
+			image = reg.Sql.Postgres.DefaultImage
+		}
+		env = []string{
+			"POSTGRES_PASSWORD=" + rootPassword,
+			"PGDATA=/var/lib/postgresql/data",
+		}
 		expPort = "5432/tcp"
 	} else if strings.HasPrefix(version, "MYSQL") {
-		parts := strings.Split(version, "_")
-		if len(parts) > 2 {
-			image = "mysql:" + parts[1] + "." + parts[2]
-		} else if len(parts) > 1 {
-			image = "mysql:" + parts[1]
-		} else {
-			image = "mysql:8.0"
+		vparts := strings.Split(version, "_")
+		if len(vparts) > 1 {
+			targetV := vparts[1]
+			// Handle legacy version strings like MYSQL_8_0
+			if len(vparts) > 2 {
+				targetV = vparts[1] + "." + vparts[2]
+			}
+			for _, v := range reg.Sql.Mysql.Versions {
+				if v.Version == targetV || strings.HasPrefix(v.Version, vparts[1]) {
+					image = v.Image
+					break
+				}
+			}
+		}
+		if image == "" {
+			image = reg.Sql.Mysql.DefaultImage
 		}
 		env = []string{"MYSQL_ROOT_PASSWORD=" + rootPassword}
 		expPort = "3306/tcp"
@@ -377,8 +428,16 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 	containerName := "minisky-sql-" + instanceName
 	log.Printf("[Orchestrator] Provisioning Cloud SQL VM: %s (image: %s)", containerName, image)
 
-	if err := sm.pullImage(image); err != nil {
-		log.Printf("[Orchestrator] Pull warning for %s: %v", image, err)
+	exists, err := sm.imageExists(image)
+	if err != nil {
+		log.Printf("[Orchestrator] Image check error for %s: %v", image, err)
+	}
+	if !exists {
+		if err := sm.pullImage(image); err != nil {
+			log.Printf("[Orchestrator] Pull warning for %s: %v", image, err)
+		}
+	} else {
+		log.Printf("[Orchestrator] Image '%s' already exists locally, skipping pull.", image)
 	}
 
 	// Clean up any stale container
@@ -483,23 +542,200 @@ func (sm *ServiceManager) DeleteComputeVM(containerName string) error {
 	return nil
 }
 
-func (sm *ServiceManager) createContainer(c ContainerConfig) error {
-	// Bind container port to a random localhost port — works with Docker Desktop
-	// (which runs in a VM where internal bridge IPs aren't host-reachable).
+// ProvisionServerlessVM starts a container from a custom image (typically built by Buildpacks).
+func (sm *ServiceManager) ProvisionServerlessVM(resourceName string, image string, env []string) (string, error) {
+	containerName := "minisky-serverless-" + resourceName
+	log.Printf("[Orchestrator] Provisioning Serverless VM: %s (image: %s)", containerName, image)
+
+	// Clean up any stale container
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("http://localhost/containers/%s?force=true", containerName), nil)
+	sm.dockerClient.Do(req)
+
+	expPort := "8080/tcp"
 	payload := map[string]interface{}{
-		"Image": c.Image,
-		"Cmd":   c.Cmd,
+		"Image": image,
+		"Env":   env,
 		"ExposedPorts": map[string]interface{}{
-			c.ContainerPort: struct{}{},
+			expPort: struct{}{},
 		},
 		"HostConfig": map[string]interface{}{
-			"NetworkMode": networkName,
+			"NetworkMode":  networkName,
 			"PortBindings": map[string]interface{}{
-				c.ContainerPort: []map[string]string{
+				expPort: []map[string]string{
 					{"HostIp": "127.0.0.1", "HostPort": "0"},
 				},
 			},
 		},
+		"Labels": map[string]string{
+			"managed-by": "minisky-serverless",
+			"resource":   resourceName,
+		},
+	}
+
+	b, _ := json.Marshal(payload)
+	cReq, _ := http.NewRequest("POST", "http://localhost/containers/create?name="+containerName, bytes.NewBuffer(b))
+	cReq.Header.Set("Content-Type", "application/json")
+	resp, err := sm.dockerClient.Do(cReq)
+	if err != nil {
+		return "", fmt.Errorf("create Serverless container: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to create Serverless container %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if err := sm.startContainer(containerName); err != nil {
+		return "", fmt.Errorf("start Serverless container: %v", err)
+	}
+
+	config := ContainerConfig{Name: containerName, ContainerPort: expPort}
+	internalURL, err := sm.discoverInternalURL(config)
+	if err != nil {
+		return "", fmt.Errorf("port discovery: %v", err)
+	}
+
+	log.Printf("[Orchestrator] ✅ Serverless Instance '%s' ONLINE at %s", resourceName, internalURL)
+	return internalURL, nil
+}
+
+// GetContainerLogs returns the last 'tail' lines of stdout/stderr from a container.
+func (sm *ServiceManager) GetContainerLogs(containerName string, tail int) (string, error) {
+	url := fmt.Sprintf("http://localhost/containers/%s/logs?stdout=true&stderr=true&tail=%d", containerName, tail)
+	return sm.fetchLogs(url)
+}
+
+// GetContainerLogsSince returns stdout/stderr logs since a specific unix timestamp
+func (sm *ServiceManager) GetContainerLogsSince(containerName string, since int64) (string, error) {
+	url := fmt.Sprintf("http://localhost/containers/%s/logs?stdout=true&stderr=true&timestamps=true&since=%d", containerName, since)
+	return sm.fetchLogs(url)
+}
+
+func (sm *ServiceManager) fetchLogs(url string) (string, error) {
+	resp, err := sm.dockerClient.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "Log source not found.", nil
+	}
+
+	// Docker logs stream format: [8]byte header + payload. 
+	body, _ := io.ReadAll(resp.Body)
+	
+	// Quick header strip for standard docker logs stream headers (8 bytes)
+	var result strings.Builder
+	for i := 0; i < len(body); {
+		if i+8 > len(body) {
+			break
+		}
+		i += 8
+		// read until end of chunk or next header
+		next := i
+		for next < len(body) && (next+8 > len(body) || (body[next] != 1 && body[next] != 2)) {
+			next++
+		}
+		result.Write(body[i:next])
+		i = next
+	}
+
+	if result.Len() == 0 && len(body) > 0 {
+		return string(body), nil
+	}
+
+	return result.String(), nil
+}
+
+// RunCommandInContainer executes a non-interactive command inside a container.
+func (sm *ServiceManager) RunCommandInContainer(name string, cmd []string) (string, error) {
+	log.Printf("[Orchestrator] Executing command in '%s': %v", name, cmd)
+
+	// 1. Create the exec instance
+	payload := map[string]interface{}{
+		"AttachStdin":  false,
+		"AttachStdout": true,
+		"AttachStderr": true,
+		"Tty":          false,
+		"Cmd":          cmd,
+	}
+	body, _ := json.Marshal(payload)
+	createURL := fmt.Sprintf("http://localhost/containers/%s/exec", name)
+	resp, err := sm.dockerClient.Post(createURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to create exec (%d): %s", resp.StatusCode, b)
+	}
+
+	var execData struct{ Id string }
+	json.NewDecoder(resp.Body).Decode(&execData)
+
+	// 2. Start the exec instance
+	startPayload := `{"Detach": false, "Tty": false}`
+	startURL := fmt.Sprintf("http://localhost/exec/%s/start", execData.Id)
+	startResp, err := sm.dockerClient.Post(startURL, "application/json", strings.NewReader(startPayload))
+	if err != nil {
+		return "", err
+	}
+	defer startResp.Body.Close()
+
+	if startResp.StatusCode >= 400 {
+		b, _ := io.ReadAll(startResp.Body)
+		return "", fmt.Errorf("failed to start exec (%d): %s", startResp.StatusCode, b)
+	}
+
+	// 3. Collect output (Docker stream format)
+	rawOutput, _ := io.ReadAll(startResp.Body)
+	
+	// Helper to strip headers
+	var result strings.Builder
+	for i := 0; i < len(rawOutput); {
+		if i+8 > len(rawOutput) {
+			break
+		}
+		// Skip header
+		i += 8
+		next := i
+		// Read until next header or end
+		for next < len(rawOutput) && (next+8 > len(rawOutput) || (rawOutput[next] != 1 && rawOutput[next] != 2)) {
+			next++
+		}
+		result.Write(rawOutput[i:next])
+		i = next
+	}
+
+	if result.Len() == 0 && len(rawOutput) > 0 {
+		return string(rawOutput), nil
+	}
+
+	return result.String(), nil
+}
+
+func (sm *ServiceManager) createContainer(c ContainerConfig) error {
+	// Bind container port to a random localhost port — works with Docker Desktop
+	// (which runs in a VM where internal bridge IPs aren't host-reachable).
+	hostCfg := map[string]interface{}{
+		"NetworkMode": networkName,
+		"PortBindings": map[string]interface{}{
+			c.ContainerPort: []map[string]string{
+				{"HostIp": "127.0.0.1", "HostPort": "0"},
+			},
+		},
+	}
+	if c.Volume != "" {
+		hostCfg["Binds"] = []string{c.Volume}
+	}
+
+	payload := map[string]interface{}{
+		"Image":        c.Image,
+		"Cmd":          c.Cmd,
+		"ExposedPorts": map[string]interface{}{c.ContainerPort: struct{}{}},
+		"HostConfig":   hostCfg,
 	}
 	data, _ := json.Marshal(payload)
 	url := fmt.Sprintf("http://localhost/containers/create?name=%s", c.Name)
@@ -680,7 +916,7 @@ func (sm *ServiceManager) ApplyFirewallPortsToVPC(vpcName string, containerNames
 	for i, cName := range containerNames {
 		osImage := osImages[i]
 		sm.DeleteComputeVM(cName)
-		sm.ProvisionComputeVM(cName, osImage, vpcName, allowedPorts)
+		sm.ProvisionComputeVM(cName, osImage, vpcName, allowedPorts, []string{})
 	}
 	return nil
 }
@@ -745,4 +981,220 @@ func (sm *ServiceManager) CheckFirewallAllows(vpcName, protocol, port, sourceIP 
 		}
 	}
 	return allowed
+}
+
+// StreamContainerExec initiates an interactive session with a container.
+// It returns a hijacked physical connection to the Docker daemon.
+func (sm *ServiceManager) StreamContainerExec(name string) (net.Conn, error) {
+	// 1. Create the exec instance
+	// We try bash first, falling back to sh if needed
+	payload := map[string]interface{}{
+		"AttachStdin":  true,
+		"AttachStdout": true,
+		"AttachStderr": true,
+		"Tty":          true,
+		"Cmd":          []string{"/bin/bash"},
+		"User":         "root",
+	}
+	body, _ := json.Marshal(payload)
+	createURL := fmt.Sprintf("http://localhost/containers/%s/exec", name)
+	resp, err := sm.dockerClient.Post(createURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		// Try fallback to /bin/sh
+		payload["Cmd"] = []string{"/bin/sh"}
+		body, _ = json.Marshal(payload)
+		resp, err = sm.dockerClient.Post(createURL, "application/json", bytes.NewBuffer(body))
+		if err != nil || resp.StatusCode != http.StatusCreated {
+			return nil, fmt.Errorf("failed to create exec: %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+	}
+
+	var execData struct{ Id string }
+	json.NewDecoder(resp.Body).Decode(&execData)
+
+	// 2. Start and Hijack the connection
+	// We must dial the socket directly to bypass http.Client's pooling and response handling
+	conn, err := net.Dial("unix", sm.sockPath)
+	if err != nil {
+		return nil, err
+	}
+
+	startPayload := `{"Detach": false, "Tty": true}`
+	reqStr := fmt.Sprintf("POST /exec/%s/start HTTP/1.1\r\n"+
+		"Host: localhost\r\n"+
+		"Content-Type: application/json\r\n"+
+		"Connection: Upgrade\r\n"+
+		"Upgrade: tcp\r\n"+
+		"Content-Length: %d\r\n\r\n%s",
+		execData.Id, len(startPayload), startPayload)
+
+	if _, err := conn.Write([]byte(reqStr)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	// Read the response header to ensure it started correctly
+	// We use a buffered reader to parse the response, then return a wrapper
+	// that continues reading from the same buffer to avoid data loss.
+	bufReader := bufio.NewReader(conn)
+	r, err := http.ReadResponse(bufReader, &http.Request{Method: "POST"})
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to read exec start response: %v", err)
+	}
+	if r.StatusCode != http.StatusOK && r.StatusCode != http.StatusSwitchingProtocols {
+		conn.Close()
+		return nil, fmt.Errorf("unexpected exec start status: %s", r.Status)
+	}
+
+	return &bufferedConn{Conn: conn, r: bufReader}, nil
+}
+
+type bufferedConn struct {
+	net.Conn
+	r io.Reader
+}
+
+func (b *bufferedConn) Read(p []byte) (int, error) {
+	return b.r.Read(p)
+}
+
+
+func (sm *ServiceManager) DoDockerRequest(req *http.Request) (*http.Response, error) { 
+	return sm.dockerClient.Do(req) 
+}
+// GetContainerIP retrieves the internal IP address of a container.
+func (sm *ServiceManager) GetContainerIP(name string) string {
+	resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", name))
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var info struct {
+		NetworkSettings struct {
+			Networks map[string]struct {
+				IPAddress string
+			}
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return ""
+	}
+
+	// Prioritize minisky-net
+	if net, ok := info.NetworkSettings.Networks[networkName]; ok && net.IPAddress != "" {
+		return net.IPAddress
+	}
+
+	// Fallback to first available IP
+	for _, net := range info.NetworkSettings.Networks {
+		if net.IPAddress != "" {
+			return net.IPAddress
+		}
+	}
+
+	return ""
+}
+
+type ContainerSummary struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Image  string `json:"image"`
+}
+
+// ListManagedContainers lists all minisky-* containers.
+func (sm *ServiceManager) ListManagedContainers() []ContainerSummary {
+	resp, err := sm.dockerClient.Get(`http://localhost/containers/json?all=true&filters={"name":["minisky-"]}`)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var raw []struct {
+		Names  []string `json:"Names"`
+		Status string   `json:"Status"`
+		Image  string   `json:"Image"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil
+	}
+	out := make([]ContainerSummary, 0, len(raw))
+	for _, c := range raw {
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+		out = append(out, ContainerSummary{Name: name, Status: c.Status, Image: c.Image})
+	}
+	return out
+}
+
+// ContainerStats represents the CPU and Memory usage of a container.
+type ContainerStats struct {
+	CPUPercentage float64
+	MemoryUsageMB float64
+}
+
+// GetContainerStats retrieves the resource usage stats of a container.
+func (sm *ServiceManager) GetContainerStats(name string) (*ContainerStats, error) {
+	url := fmt.Sprintf("http://localhost/containers/%s/stats?stream=false", name)
+	resp, err := sm.dockerClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get stats: status %d", resp.StatusCode)
+	}
+
+	var raw struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+			OnlineCPUs     uint32 `json:"online_cpus"`
+		} `json:"cpu_stats"`
+		PreCPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage    uint64 `json:"usage"`
+			Stats    map[string]uint64 `json:"stats"`
+		} `json:"memory_stats"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+
+	stats := &ContainerStats{}
+
+	// Calculate CPU percentage
+	cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage) - float64(raw.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(raw.CPUStats.SystemCPUUsage) - float64(raw.PreCPUStats.SystemCPUUsage)
+
+	if systemDelta > 0.0 && cpuDelta > 0.0 {
+		stats.CPUPercentage = (cpuDelta / systemDelta) * float64(raw.CPUStats.OnlineCPUs) * 100.0
+	}
+
+	// Calculate Memory Usage in MB (subtract inactive_file cache if available)
+	memUsage := raw.MemoryStats.Usage
+	if inactiveFile, ok := raw.MemoryStats.Stats["inactive_file"]; ok {
+		if memUsage > inactiveFile {
+			memUsage -= inactiveFile
+		}
+	}
+	stats.MemoryUsageMB = float64(memUsage) / 1024.0 / 1024.0
+
+	return stats, nil
 }

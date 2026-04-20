@@ -7,6 +7,7 @@ export type Service = {
   status: string;
   port: number | null;
   description: string;
+  missingDeps?: string[];
 };
 
 export function useServices() {
@@ -45,13 +46,36 @@ export function useServices() {
   };
 
   const toggleSetting = async (key: string, currentVal: boolean) => {
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [key]: !currentVal })
-    });
-    loadData();
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: !currentVal })
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        alert(`Failed to update setting: ${errText}`);
+      }
+      loadData();
+    } catch (e: any) {
+      alert(`Error updating setting: ${e.message}`);
+    }
   };
 
-  return { services, settings, handleStartContainer, handleStopContainer, toggleSetting };
+  const handleInstallDependency = async (id: string) => {
+    try {
+      const res = await fetch(`/api/manage/system/install-dependency/${id}`, { method: 'POST' });
+      if (!res.ok) {
+        const errText = await res.text();
+        alert(`Installation failed: ${errText}`);
+      } else {
+        alert(`${id} installed successfully! You can now enable the service.`);
+      }
+      loadData();
+    } catch (e: any) {
+      alert(`Error installing dependency: ${e.message}`);
+    }
+  };
+
+  return { services, settings, handleStartContainer, handleStopContainer, toggleSetting, handleInstallDependency };
 }

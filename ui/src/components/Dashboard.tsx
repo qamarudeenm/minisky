@@ -10,9 +10,15 @@ import FirestoreManagerDrawer from './FirestoreManagerDrawer';
 import PubSubManagerDrawer from './PubSubManagerDrawer';
 import CloudSqlManagerDrawer from './CloudSqlManagerDrawer';
 import DataprocManagerDrawer from './DataprocManagerDrawer';
+import ServerlessManagerDrawer from './ServerlessManagerDrawer';
+import BigQueryManagerDrawer from './BigQueryManagerDrawer';
+import BigtableManagerDrawer from './BigtableManagerDrawer';
+import GKEManagerDrawer from './GKEManagerDrawer';
 
 export default function Dashboard() {
-  const { services, settings, handleStartContainer, handleStopContainer, toggleSetting } = useServices();
+  const { 
+    services, settings, handleStartContainer, handleStopContainer, toggleSetting, handleInstallDependency 
+  } = useServices();
   const runningServices = services.filter(s => s.status === 'RUNNING');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [iamDrawerOpen, setIamDrawerOpen] = useState(false);
@@ -22,6 +28,14 @@ export default function Dashboard() {
   const [pubsubDrawerOpen, setPubsubDrawerOpen] = useState(false);
   const [cloudSqlDrawerOpen, setCloudSqlDrawerOpen] = useState(false);
   const [dataprocDrawerOpen, setDataprocDrawerOpen] = useState(false);
+  const [serverlessDrawerOpen, setServerlessDrawerOpen] = useState(false);
+  const [bigQueryDrawerOpen, setBigQueryDrawerOpen] = useState(false);
+  const [bigtableDrawerOpen, setBigtableDrawerOpen] = useState(false);
+  const [gkeDrawerOpen, setGkeDrawerOpen] = useState(false);
+
+  const serverlessService = services.find(s => s.id === 'serverless');
+  const isBuildpacksEnabled = settings.MINISKY_SERVERLESS_BACKEND === 'buildpacks';
+  const missingPack = serverlessService?.missingDeps?.includes('pack') || false;
 
   return (
     <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>
@@ -60,7 +74,12 @@ export default function Dashboard() {
                 if (id === 'pubsub') setPubsubDrawerOpen(true);
                 if (id === 'sqladmin') setCloudSqlDrawerOpen(true);
                 if (id === 'dataproc') setDataprocDrawerOpen(true);
+                if (id === 'bigquery') setBigQueryDrawerOpen(true);
+                if (id === 'bigtable') setBigtableDrawerOpen(true);
+                if (id === 'gke') setGkeDrawerOpen(true);
+                if (id === 'cloudfunctions' || id === 'serverless') setServerlessDrawerOpen(true);
               }}
+              onInstallDependency={handleInstallDependency}
             />
           ))}
         </Box>
@@ -73,7 +92,23 @@ export default function Dashboard() {
       <FirestoreManagerDrawer open={firestoreDrawerOpen} onClose={() => setFirestoreDrawerOpen(false)} />
       <PubSubManagerDrawer open={pubsubDrawerOpen} onClose={() => setPubsubDrawerOpen(false)} />
       <CloudSqlManagerDrawer open={cloudSqlDrawerOpen} onClose={() => setCloudSqlDrawerOpen(false)} />
-      <DataprocManagerDrawer open={dataprocDrawerOpen} onClose={() => setDataprocDrawerOpen(false)} />
+      <DataprocManagerDrawer 
+        open={dataprocDrawerOpen} 
+        onClose={() => setDataprocDrawerOpen(false)} 
+        onOpenStorage={() => setDrawerOpen(true)}
+        onOpenBigQuery={() => setBigQueryDrawerOpen(true)}
+      />
+      <ServerlessManagerDrawer 
+        open={serverlessDrawerOpen} 
+        onClose={() => setServerlessDrawerOpen(false)} 
+        isBuildpacksEnabled={isBuildpacksEnabled}
+        onEnableBuildpacks={async () => { if (missingPack) await handleInstallDependency('pack'); toggleSetting('MINISKY_SERVERLESS_BACKEND_ENABLED', isBuildpacksEnabled); }}
+        missingPack={missingPack}
+        onInstallPack={() => handleInstallDependency('pack')}
+      />
+      <BigQueryManagerDrawer open={bigQueryDrawerOpen} onClose={() => setBigQueryDrawerOpen(false)} />
+      <BigtableManagerDrawer open={bigtableDrawerOpen} onClose={() => setBigtableDrawerOpen(false)} />
+      <GKEManagerDrawer open={gkeDrawerOpen} onClose={() => setGkeDrawerOpen(false)} />
 
       <style>{`
         @keyframes fadeIn {

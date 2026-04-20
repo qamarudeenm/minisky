@@ -25,7 +25,8 @@ export default function CloudSqlManagerDrawer({ open, onClose }: CloudSqlManager
   // Dialogs
   const [newInstanceOpen, setNewInstanceOpen] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
-  const [newDbVersion, setNewDbVersion] = useState('POSTGRES_15');
+  const [newDbVersion, setNewDbVersion] = useState('POSTGRES_18');
+  const [availableDbVersions, setAvailableDbVersions] = useState<any[]>([]);
 
   const apiRoot = `/api/manage/cloudsql/projects/${activeProject}`;
 
@@ -45,10 +46,32 @@ export default function CloudSqlManagerDrawer({ open, onClose }: CloudSqlManager
   useEffect(() => {
     if (open) {
       loadInstances();
+      fetch('/api/config/images')
+        .then(r => r.json())
+        .then(d => {
+          const pg = (d.sql?.postgres?.versions || []).map((v: any) => ({ ...v, engine: 'POSTGRES' }));
+          const my = (d.sql?.mysql?.versions || []).map((v: any) => ({ ...v, engine: 'MYSQL' }));
+          setAvailableDbVersions([...pg, ...my]);
+        })
+        .catch(console.error);
+
+      // Start polling for status changes
+      const t = setInterval(loadInstances, 3000);
+      return () => clearInterval(t);
     } else {
       setActiveInstance(null);
     }
   }, [open, loadInstances]);
+
+  // Keep activeInstance in sync with the updated instances list
+  useEffect(() => {
+    if (activeInstance) {
+      const updated = instances.find(i => i.name === activeInstance.name);
+      if (updated && (updated.state !== activeInstance.state || updated.ipAddresses?.length !== activeInstance.ipAddresses?.length)) {
+        setActiveInstance(updated);
+      }
+    }
+  }, [instances, activeInstance]);
 
   const handleCreateInstance = async () => {
     if (!newInstanceName) return;
@@ -211,10 +234,11 @@ export default function CloudSqlManagerDrawer({ open, onClose }: CloudSqlManager
               label="Database Version"
               onChange={(e) => setNewDbVersion(e.target.value)}
             >
-              <MenuItem value="POSTGRES_15">PostgreSQL 15</MenuItem>
-              <MenuItem value="POSTGRES_14">PostgreSQL 14</MenuItem>
-              <MenuItem value="MYSQL_8_0">MySQL 8.0</MenuItem>
-              <MenuItem value="MYSQL_5_7">MySQL 5.7</MenuItem>
+              {availableDbVersions.map(v => (
+                <MenuItem key={`${v.engine}_${v.version}`} value={`${v.engine}_${v.version.replace('.', '_')}`}>
+                  {v.label}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </DialogContent>

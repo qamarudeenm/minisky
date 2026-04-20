@@ -1,33 +1,49 @@
 # Binaries
 minisky
-minisky-daemon
+minisky.exe
 
-# Local state and caches
+# MiniSky Local State
 .minisky/
-.claude/
-scratch/
+
+# Node.js / UI
+ui/node_modules/
+ui/dist/
+ui/.env.local
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/minisky-sa-key.json
 
 # Go
 vendor/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
 *.test
 *.out
 
-# Node / UI
-ui/node_modules/
-ui/dist/
-ui/.env*
-ui/npm-debug.log*
-ui/yarn-debug.log*
-ui/yarn-error.log*
+# Python (Serverless Development)
+**/__pycache__/
+**/.venv/
+**/requirements.txt.lock
+
+# OS
+.DS_Store
+*.swp
+
+# Distribution
+dist/
 
 # IDEs
-.vscode/
 .idea/
-*.swp
-*.swo
-.DS_Store
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Logs & Temp
+*.log
+tmp/
+.temp/
+.env
+.env.*
+!ui/.env.example
+

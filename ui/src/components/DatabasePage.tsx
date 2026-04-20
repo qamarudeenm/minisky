@@ -4,19 +4,24 @@ import ServiceCard from './ServiceCard';
 import FirestoreManagerDrawer from './FirestoreManagerDrawer';
 import BigQueryManagerDrawer from './BigQueryManagerDrawer';
 import CloudSqlManagerDrawer from './CloudSqlManagerDrawer';
+import BigtableManagerDrawer from './BigtableManagerDrawer';
 import { useState } from 'react';
 
 export default function DatabasePage() {
-  const { services, settings, handleStartContainer, handleStopContainer, toggleSetting } = useServices();
-  const dbServices = services.filter(s => ['firestore', 'bigquery', 'sqladmin'].includes(s.id));
+  const { 
+    services, settings, handleStartContainer, handleStopContainer, toggleSetting, handleInstallDependency 
+  } = useServices();
+  const dbServices = services.filter(s => ['firestore', 'bigquery', 'sqladmin', 'bigtable', 'datastore', 'spanner'].includes(s.id));
   const [firestoreOpen, setFirestoreOpen] = useState(false);
   const [bigqueryOpen, setBigqueryOpen] = useState(false);
   const [cloudSqlOpen, setCloudSqlOpen] = useState(false);
+  const [bigtableOpen, setBigtableOpen] = useState(false);
 
   const handleManage = (id: string) => {
     if (id === 'firestore') setFirestoreOpen(true);
     if (id === 'bigquery') setBigqueryOpen(true);
     if (id === 'sqladmin') setCloudSqlOpen(true);
+    if (id === 'bigtable') setBigtableOpen(true);
   };
 
   return (
@@ -33,12 +38,14 @@ export default function DatabasePage() {
             onStopContainer={handleStopContainer}
             onToggleSetting={toggleSetting}
             onManage={handleManage}
+            onInstallDependency={handleInstallDependency}
           />
         ))}
       </Box>
       <FirestoreManagerDrawer open={firestoreOpen} onClose={() => setFirestoreOpen(false)} />
       <BigQueryManagerDrawer open={bigqueryOpen} onClose={() => setBigqueryOpen(false)} />
       <CloudSqlManagerDrawer open={cloudSqlOpen} onClose={() => setCloudSqlOpen(false)} />
+      <BigtableManagerDrawer open={bigtableOpen} onClose={() => setBigtableOpen(false)} />
     </Box>
   );
 }

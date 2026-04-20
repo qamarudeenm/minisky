@@ -37,15 +37,16 @@ This document acts as a living project tracker for our MiniSky deep UI integrati
 - [x] **Cloud Pub/Sub** *(Event Stream Sandbox)*
   - **Management Console**: CRUD for Topics and Subscriptions.
   - **Sandbox**: Feature-rich publish/pull interface with automatic Base64 encoding/decoding and message acknowledgment support.
+- [x] **Cloud Dataproc** *(Physical Spark Cluster Orchestration)*
+  - **Docker Engine Connectivity**: Dynamically provisions Master and Worker nodes using `bitnami/spark:3.5` images.
+  - **UI Management**: Specialized drawer for Cluster lifecycle management and PySpark/Java job submission.
+  - **Network Fabric**: All nodes are automatically bridged to `minisky-net` for seamless connection to other emulators.
 
 ## Pending Roadmap (In Priority Order)
 
 - [ ] **Serverless (Cloud Functions/Run)**
   - **Goal**: Buildpacks visibility and execution interface.
   - **Capabilities Required**: List deployed serverless functions, manually invoke endpoints, view build logs.
-- [ ] **Cloud Dataproc**
-  - **Goal**: Tracking Spark LRO (Long Running Operations).
-  - **Capabilities Required**: Monitor active jobs.
 - [ ] **Logging and Monitoring (Cloud Logging / Operations Suite)**
   - **Goal**: Centralized log aggregator GUI.
   - **Capabilities Required**: Capture logs from all other MiniSky services via Docker log streams. Display them with timestamps, log producer source, and visually separate severity levels (Error, Info, Debug) with a legend.

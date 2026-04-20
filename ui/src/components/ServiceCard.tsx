@@ -14,9 +14,12 @@ type ServiceCardProps = {
   onToggleSetting: (key: string, currentVal: boolean) => void;
   onManage?: (id: string) => void;
   onStopContainer?: (id: string) => void;
+  onInstallDependency?: (id: string) => void;
 };
 
-export default function ServiceCard({ service: s, idx, settings, onStartContainer, onStopContainer, onToggleSetting, onManage }: ServiceCardProps) {
+export default function ServiceCard({ 
+  service: s, idx, settings, onStartContainer, onStopContainer, onToggleSetting, onManage, onInstallDependency 
+}: ServiceCardProps) {
   const getIcon = () => {
     switch (s.id) {
       case 'storage': return <CloudIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
@@ -30,6 +33,9 @@ export default function ServiceCard({ service: s, idx, settings, onStartContaine
       case 'dns': return <DnsIcon sx={{ color: '#f9ab00', fontSize: '1.2rem' }}/>;
       case 'iam': return <SecurityIcon sx={{ color: '#1e8e3e', fontSize: '1.2rem' }}/>;
       case 'dataproc': return <MemoryIcon sx={{ color: '#d93025', fontSize: '1.2rem' }}/>;
+      case 'bigtable': return <StorageIcon sx={{ color: '#e67c73', fontSize: '1.2rem' }}/>;
+      case 'datastore': return <StorageIcon sx={{ color: '#f9ab00', fontSize: '1.2rem' }}/>;
+      case 'spanner': return <StorageIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       default:
         return idx % 4 === 0 ? <CloudIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/> :
                idx % 4 === 1 ? <MemoryIcon sx={{ color: '#d93025', fontSize: '1.2rem' }}/> :
@@ -86,11 +92,15 @@ export default function ServiceCard({ service: s, idx, settings, onStartContaine
           )}
           
           {/* Dynamic Controls based on service ID */}
-          {['storage', 'pubsub', 'firestore'].includes(s.id) && s.status === 'SLEEPING' && (
+          {['storage', 'pubsub', 'firestore', 'bigtable', 'datastore', 'spanner'].includes(s.id) && s.status === 'SLEEPING' && (
             <Button size="small" variant="outlined" onClick={() => onStartContainer(s.id)}>Spin Up Container</Button>
           )}
 
-          {['storage', 'pubsub', 'firestore'].includes(s.id) && s.status === 'RUNNING' && onStopContainer && (
+          {s.id === 'gke' && s.status === 'SLEEPING' && s.missingDeps?.includes('kind') && onInstallDependency && (
+            <Button size="small" variant="contained" color="warning" onClick={() => onInstallDependency('kind')} sx={{ fontWeight: 600 }}>Fix Missing Tool (kind)</Button>
+          )}
+
+          {['storage', 'pubsub', 'firestore', 'bigtable', 'datastore', 'spanner'].includes(s.id) && s.status === 'RUNNING' && onStopContainer && (
             <Button size="small" variant="outlined" color="error" onClick={() => onStopContainer(s.id)}>Stop Container</Button>
           )}
 
@@ -118,6 +128,14 @@ export default function ServiceCard({ service: s, idx, settings, onStartContaine
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Clusters</Button>
           )}
 
+          {s.id === 'cloudfunctions' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Functions</Button>
+          )}
+
+          {s.id === 'serverless' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Services</Button>
+          )}
+
           {s.id === 'iam' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage IAM</Button>
           )}
@@ -129,8 +147,20 @@ export default function ServiceCard({ service: s, idx, settings, onStartContaine
           {s.id === 'dns' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Network</Button>
           )}
+
+          {s.id === 'bigtable' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Bigtable</Button>
+          )}
+
+          {s.id === 'gke' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Clusters</Button>
+          )}
           
-          {s.id === 'serverless' && (
+          {s.id === 'serverless' && s.missingDeps?.includes('pack') && onInstallDependency && (
+            <Button size="small" variant="contained" color="warning" onClick={() => onInstallDependency('pack')} sx={{ fontWeight: 600 }}>Fix Missing Tool (pack)</Button>
+          )}
+          
+          {s.id === 'serverless' && (!s.missingDeps?.includes('pack')) && (
             <Button size="small" variant="outlined" color={settings?.serverless_pack ? 'error' : 'primary'} onClick={() => onToggleSetting('serverless_pack', settings?.serverless_pack)}>
               {settings?.serverless_pack ? 'Disable Buildpacks' : 'Enable Buildpacks'}
             </Button>
@@ -144,7 +174,7 @@ export default function ServiceCard({ service: s, idx, settings, onStartContaine
           
           {s.id === 'gke' && (
             <Button size="small" variant="outlined" color={settings?.gke_kind ? 'error' : 'primary'} onClick={() => onToggleSetting('gke_kind', settings?.gke_kind)}>
-              {settings?.gke_kind ? 'Disable Kind Cluster' : 'Enable Kind Cluster'}
+              {settings?.gke_kind ? 'Disable GKE Cluster' : 'Enable GKE Cluster'}
             </Button>
           )}
         </Box>

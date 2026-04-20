@@ -9,8 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"minisky/pkg/config"
 	"minisky/pkg/orchestrator"
+	"minisky/pkg/registry"
 )
+
+func init() {
+	registry.Register("dataproc.googleapis.com", func(ctx *registry.Context) http.Handler {
+		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
+	})
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resource types
@@ -242,10 +250,28 @@ func (api *API) createCluster(w http.ResponseWriter, r *http.Request, project, r
 
 	api.opMgr.RunAsync(op.Name, func() error {
 		clusterStr := body.ClusterName
+		reg := config.GetImageRegistry()
+
 		// Provision the Master Node
-		masterImage := "bitnami/spark:3.5"
+		masterImage := reg.Dataproc.DefaultImage
+		reqVersion := cfg.SoftwareConfig.ImageVersion
+		for _, v := range reg.Dataproc.Versions {
+			if strings.Contains(reqVersion, v.Version) {
+				masterImage = v.Image
+				break
+			}
+		}
+
+		// Connectivity configuration for Cloud Storage and BigQuery emulators
+		connectivityEnv := []string{
+			"SPARK_HADOOP_fs_gs_impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
+			"SPARK_HADOOP_google_cloud_auth_service_account_enable=false",
+			"SPARK_HADOOP_fs_gs_endpoint=http://minisky-gcs:4443",
+			"BIGQUERY_REST_ENDPOINT=http://host.docker.internal:8080/bigquery/v2",
+		}
+
 		masterName := fmt.Sprintf("minisky-dataproc-%s-m", clusterStr)
-		api.svcMgr.ProvisionComputeVM(masterName, masterImage, "default", []string{"8080/tcp"})
+		api.svcMgr.ProvisionComputeVM(masterName, masterImage, "default", reg.Dataproc.MasterPorts, connectivityEnv)
 
 		// Provision Worker Nodes
 		numWorkers := 2
@@ -254,7 +280,7 @@ func (api *API) createCluster(w http.ResponseWriter, r *http.Request, project, r
 		}
 		for i := 0; i < numWorkers; i++ {
 			workerName := fmt.Sprintf("minisky-dataproc-%s-w-%d", clusterStr, i)
-			api.svcMgr.ProvisionComputeVM(workerName, masterImage, "default", []string{})
+			api.svcMgr.ProvisionComputeVM(workerName, masterImage, "default", []string{}, connectivityEnv)
 		}
 
 		api.mu.Lock()
@@ -399,19 +425,55 @@ func (api *API) submitJob(w http.ResponseWriter, r *http.Request, project, regio
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		api.mu.Lock()
-		if j, ok := api.jobs[key]; ok {
-			j.Status.State = "RUNNING"
-			j.Status.StateStartTime = time.Now().UTC().Format(time.RFC3339)
+		j, ok := api.jobs[key]
+		if !ok {
+			api.mu.Unlock()
+			return
 		}
+		j.Status.State = "RUNNING"
+		j.Status.StateStartTime = time.Now().UTC().Format(time.RFC3339)
+		clusterName := j.Placement.ClusterName
 		api.mu.Unlock()
 
-		time.Sleep(3 * time.Second)
-		api.mu.Lock()
-		if j, ok := api.jobs[key]; ok {
-			j.Status.State = "DONE"
-			j.Status.StateStartTime = time.Now().UTC().Format(time.RFC3339)
+		masterName := fmt.Sprintf("minisky-dataproc-%s-m", clusterName)
+		
+		var cmd []string
+		if j.PysparkJob != nil {
+			cmd = []string{"spark-submit", "--master", "spark://localhost:7077", j.PysparkJob.MainPythonFileUri}
+			cmd = append(cmd, j.PysparkJob.Args...)
+		} else if j.SparkJob != nil {
+			cmd = []string{"spark-submit", "--master", "spark://localhost:7077"}
+			if j.SparkJob.MainClass != "" {
+				cmd = append(cmd, "--class", j.SparkJob.MainClass)
+			}
+			cmd = append(cmd, j.SparkJob.MainJarFileUri)
+			cmd = append(cmd, j.SparkJob.Args...)
+		} else {
+			// No-op for unsupported types or mocks
+			time.Sleep(2 * time.Second)
 		}
-		api.mu.Unlock()
+
+		if len(cmd) > 0 {
+			out, err := api.svcMgr.RunCommandInContainer(masterName, cmd)
+			api.mu.Lock()
+			if j, ok := api.jobs[key]; ok {
+				if err != nil {
+					j.Status.State = "ERROR"
+					j.Status.Details = fmt.Sprintf("Spark-submit failed: %v\nOutput: %s", err, out)
+				} else {
+					j.Status.State = "DONE"
+					j.Status.Details = out
+				}
+				j.Status.StateStartTime = time.Now().UTC().Format(time.RFC3339)
+			}
+			api.mu.Unlock()
+		} else {
+			api.mu.Lock()
+			if j, ok := api.jobs[key]; ok {
+				j.Status.State = "DONE"
+			}
+			api.mu.Unlock()
+		}
 	}()
 
 	w.WriteHeader(http.StatusOK)

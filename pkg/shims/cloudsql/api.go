@@ -10,7 +10,14 @@ import (
 	"time"
 
 	"minisky/pkg/orchestrator"
+	"minisky/pkg/registry"
 )
+
+func init() {
+	registry.Register("sqladmin.googleapis.com", func(ctx *registry.Context) http.Handler {
+		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
+	})
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resource types

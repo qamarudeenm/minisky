@@ -1,0 +1,83 @@
+# .goreleaser.yaml
+version: 2
+
+project_name: minisky
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: linux
+    main: ./cmd/minisky
+    binary: minisky
+    env: [CGO_ENABLED=1]
+    goos: [linux]
+    goarch: [amd64]
+
+  - id: windows
+    main: ./cmd/minisky
+    binary: minisky
+    env: [CGO_ENABLED=0]
+    goos: [windows]
+    goarch: [amd64]
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - CONTRIBUTING.md
+      - docs/*
+      - LICENSE*
+
+scoops:
+  - name: minisky
+    repository:
+      owner: minisky-io
+      name: scoop-bucket
+    homepage: https://github.com/minisky-io/minisky
+    description: High-fidelity local GCP emulator.
+    license: MIT
+
+nfpms:
+  - id: minisky-pkg
+    package_name: minisky
+    vendor: MiniSky Open Source
+    homepage: https://github.com/minisky-io/minisky
+    maintainer: MiniSky Team <maintainers@minisky.dev>
+    description: High-fidelity local GCP emulator.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+# contents is removed to avoid collision as GoReleaser includes the binary by default
+
+brews:
+  - name: minisky
+    repository:
+      owner: minisky-io
+      name: homebrew-tap
+    directory: Formula
+    homepage: https://github.com/minisky-io/minisky
+    description: High-fidelity local GCP emulator.
+    install: |
+      bin.install "minisky"
+    test: |
+      system "#{bin}/minisky version"
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

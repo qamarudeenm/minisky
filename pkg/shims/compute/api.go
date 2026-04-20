@@ -10,7 +10,14 @@ import (
 	"time"
 
 	"minisky/pkg/orchestrator"
+	"minisky/pkg/registry"
 )
+
+func init() {
+	registry.Register("compute.googleapis.com", func(ctx *registry.Context) http.Handler {
+		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
+	})
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resource types
@@ -251,6 +258,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 		return
 	}
 
+
 	name := body.Name
 	if name == "" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -323,14 +331,23 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 	op := api.opMgr.Register("compute#operation", "insert", targetLink, zone, "")
 	op.Kind = "compute#operation"
 
-	// Resolve the docker image mapping
-	osImage := "ubuntu:latest"
-	lowerSource := strings.ToLower(machineType + " ")
+	// Resolve the docker image mapping from the boot disk source
+	osImage := "ubuntu:26.04" // Fallback to 2026 default
 	for _, disk := range disks {
-		lowerSource += strings.ToLower(disk.Source)
+		if disk.Boot && disk.Source != "" {
+			osImage = disk.Source
+			break
+		}
 	}
-	if strings.Contains(lowerSource, "centos") {
-		osImage = "centos:latest"
+	// Legacy CentOS check for backward compatibility or direct API calls
+	if osImage == "ubuntu:26.04" {
+		lowerSource := strings.ToLower(machineType + " ")
+		for _, disk := range disks {
+			lowerSource += strings.ToLower(disk.Source)
+		}
+		if strings.Contains(lowerSource, "centos") {
+			osImage = "centos:latest"
+		}
 	}
 
 	containerName := fmt.Sprintf("minisky-vm-%s", name)
@@ -375,7 +392,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 		allowedPorts := api.getAllowedPortsForVPC(vpcName)
 
 		// Tell the Orchestrator to physically spin up the Docker container!
-		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcName, allowedPorts)
+		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcName, allowedPorts, []string{})
 		
 		api.mu.Lock()
 		if i, ok := api.instances[key]; ok {
@@ -414,6 +431,9 @@ func (api *API) getInstance(w http.ResponseWriter, r *http.Request, project, zon
 		cName = inst.Name
 	}
 	inst.HostPorts = api.svcMgr.GetVMPortMappings(cName)
+	if len(inst.NetworkInterfaces) > 0 {
+		inst.NetworkInterfaces[0].NetworkIP = api.svcMgr.GetContainerIP(cName)
+	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(inst)
@@ -434,6 +454,9 @@ func (api *API) listInstances(w http.ResponseWriter, r *http.Request, project, z
 				cName = copyOfInst.Name
 			}
 			copyOfInst.HostPorts = api.svcMgr.GetVMPortMappings(cName)
+			if len(copyOfInst.NetworkInterfaces) > 0 {
+				copyOfInst.NetworkInterfaces[0].NetworkIP = api.svcMgr.GetContainerIP(cName)
+			}
 			items = append(items, &copyOfInst)
 		}
 	}

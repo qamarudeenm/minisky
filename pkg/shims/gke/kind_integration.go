@@ -19,12 +19,17 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
+
+	"minisky/pkg/orchestrator"
 )
 
 // KindBackend drives real Kind cluster lifecycle.
 type KindBackend struct {
-	enabled bool
+	enabled         bool
+	pendingClusters sync.Map
 }
 
 // NewKindBackend returns a KindBackend. It is only active when
@@ -32,11 +37,14 @@ type KindBackend struct {
 func NewKindBackend() *KindBackend {
 	enabled := strings.EqualFold(os.Getenv("MINISKY_GKE_BACKEND"), "kind")
 	if enabled {
-		if _, err := exec.LookPath("kind"); err != nil {
-			log.Printf("[KindBackend] WARNING: MINISKY_GKE_BACKEND=kind but 'kind' CLI not found in PATH. Falling back to in-memory simulation.")
+		localKind := filepath.Join(orchestrator.GetLocalBinPath(), orchestrator.GetKindBinaryName())
+		if _, err := os.Stat(localKind); err == nil {
+			log.Printf("[KindBackend] ✅ Found local 'kind' binary at %s", localKind)
+		} else if _, err := exec.LookPath(orchestrator.GetKindBinaryName()); err != nil {
+			log.Printf("[KindBackend] WARNING: MINISKY_GKE_BACKEND=kind but 'kind' CLI not found. Falling back to in-memory simulation.")
 			enabled = false
 		} else {
-			log.Printf("[KindBackend] ✅ Kind integration ENABLED — real local clusters will be provisioned.")
+			log.Printf("[KindBackend] ✅ Kind integration ENABLED — using system binary.")
 		}
 	}
 	return &KindBackend{enabled: enabled}
@@ -47,16 +55,19 @@ func (k *KindBackend) Enabled() bool { return k.enabled }
 
 // SetEnabled toggles the Kind backend dynamically.
 func (k *KindBackend) SetEnabled(enabled bool) error {
-	k.enabled = enabled
 	if enabled {
-		if _, err := exec.LookPath("kind"); err != nil {
-			k.enabled = false
+		localKind := filepath.Join(orchestrator.GetLocalBinPath(), orchestrator.GetKindBinaryName())
+		_, localErr := os.Stat(localKind)
+		_, sysErr := exec.LookPath(orchestrator.GetKindBinaryName())
+		
+		if localErr != nil && sysErr != nil {
 			return fmt.Errorf("'kind' CLI not found, cannot enable")
 		}
 		log.Printf("[KindBackend] dynamically ENABLED via UI")
 	} else {
 		log.Printf("[KindBackend] dynamically DISABLED via UI")
 	}
+	k.enabled = enabled
 	return nil
 }
 
@@ -67,13 +78,21 @@ func (k *KindBackend) CreateCluster(clusterName string) (kubeconfigPath string, 
 		return "", fmt.Errorf("kind backend not enabled")
 	}
 
-	// Kind names must be lowercase alphanumeric+hyphens, max 63 chars.
+	// Track as pending
 	kindName := sanitizeKindName(clusterName)
-	kubeconfigPath = fmt.Sprintf("/tmp/minisky-kubeconfig-%s.yaml", kindName)
+	k.pendingClusters.Store(kindName, true)
+	defer k.pendingClusters.Delete(kindName)
 
 	log.Printf("[KindBackend] Creating cluster: %s (kind name: %s)", clusterName, kindName)
+	kubeconfigPath = fmt.Sprintf("/tmp/minisky-kubeconfig-%s.yaml", kindName)
 
-	cmd := exec.Command("kind", "create", "cluster",
+	binPath := orchestrator.GetKindBinaryName()
+	localKind := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+	if _, err := os.Stat(localKind); err == nil {
+		binPath = localKind
+	}
+
+	cmd := exec.Command(binPath, "create", "cluster",
 		"--name", kindName,
 		"--kubeconfig", kubeconfigPath,
 		"--wait", "120s", // wait up to 2 minutes for control plane
@@ -115,23 +134,67 @@ func (k *KindBackend) DeleteCluster(clusterName string) error {
 		return fmt.Errorf("kind backend not enabled")
 	}
 	kindName := sanitizeKindName(clusterName)
-	log.Printf("[KindBackend] Deleting cluster: %s", kindName)
+	binPath := orchestrator.GetKindBinaryName()
+	localKind := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+	if _, err := os.Stat(localKind); err == nil {
+		binPath = localKind
+	}
 
-	cmd := exec.Command("kind", "delete", "cluster", "--name", kindName)
+	cmd := exec.Command(binPath, "delete", "cluster", "--name", kindName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 // GetEndpoint returns the Kind cluster's API server endpoint from the kubeconfig.
-// In a real implementation this would parse the kubeconfig YAML.
-// For now, Kind always exposes the API server on localhost:*
 func (k *KindBackend) GetEndpoint(clusterName string) string {
-	// Kind clusters are always reachable on 127.0.0.1 with a random high port.
-	// The real endpoint can be read from the generated kubeconfig:
-	//   kubectl --kubeconfig=<path> cluster-info
-	// For now, return a predictable value the GKE shim will include in Cluster.Endpoint.
 	return "127.0.0.1"
+}
+
+// ClusterInfo represents a kind cluster with status.
+type ClusterInfo struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // RUNNING, PROVISIONING
+}
+
+// ListClusters returns a list of active and pending kind clusters.
+func (k *KindBackend) ListClusters() ([]ClusterInfo, error) {
+	if !k.enabled {
+		return nil, fmt.Errorf("kind backend not enabled")
+	}
+
+	binPath := orchestrator.GetKindBinaryName()
+	localKind := filepath.Join(orchestrator.GetLocalBinPath(), binPath)
+	if _, err := os.Stat(localKind); err == nil {
+		binPath = localKind
+	}
+
+	out, err := exec.Command(binPath, "get", "clusters").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list kind clusters: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var clusters []ClusterInfo
+	activeNames := make(map[string]bool)
+
+	for _, l := range lines {
+		if l != "" && l != "No kind clusters found." {
+			clusters = append(clusters, ClusterInfo{Name: l, Status: "RUNNING"})
+			activeNames[l] = true
+		}
+	}
+
+	// Add pending clusters that haven't appeared in 'kind get clusters' yet
+	k.pendingClusters.Range(func(key, value interface{}) bool {
+		name := key.(string)
+		if !activeNames[name] {
+			clusters = append(clusters, ClusterInfo{Name: name, Status: "PROVISIONING"})
+		}
+		return true
+	})
+
+	return clusters, nil
 }
 
 func sanitizeKindName(name string) string {

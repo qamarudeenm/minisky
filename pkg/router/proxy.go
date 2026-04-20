@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 
 	"minisky/pkg/orchestrator"
@@ -73,9 +74,25 @@ func (p *ProxyRouter) RegisterLazyDocker(domain string) {
 
 func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	targetDomain := r.Host
+	
+	// 1. Support Path-based Routing for local requests (Terraform/CLI)
+	if strings.Contains(targetDomain, "localhost") || strings.Contains(targetDomain, "127.0.0.1") {
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/storage/") || strings.HasPrefix(path, "/upload/storage/") {
+			targetDomain = "storage.googleapis.com"
+		} else if strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/topics") {
+			targetDomain = "pubsub.googleapis.com"
+		} else if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/locations/") {
+			targetDomain = "cloudfunctions.googleapis.com"
+		} else if strings.HasPrefix(path, "/compute/") {
+			targetDomain = "compute.googleapis.com"
+		}
+		log.Printf("[Router] Path-mapped local request: %s -> %s", r.URL.Path, targetDomain)
+	}
+
 	log.Printf("[Router] %s %s%s", r.Method, targetDomain, r.URL.Path)
 
-	// 1. Schema Validation
+	// 2. Schema Validation
 	if !p.validator.ValidateRequest(w, r) {
 		return
 	}
