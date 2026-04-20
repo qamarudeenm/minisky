@@ -2,12 +2,10 @@ package spanner
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"strings"
 
 	"minisky/pkg/orchestrator"
 	"minisky/pkg/registry"
