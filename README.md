@@ -4,7 +4,7 @@
 
 MiniSky provides a seamless, professional-grade development environment that emulates GCP services locally. It allows developers to test Infrastructure-as-Code (Terraform), Serverless functions, and complex data workflows without incurring cloud costs or requiring an internet connection.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/minisky-io/minisky)](https://goreportcard.com/report/github.com/minisky-io/minisky)
+[![Go Report Card](https://goreportcard.com/badge/github.com/qamarudeenm/minisky)](https://goreportcard.com/report/github.com/qamarudeenm/minisky)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -20,8 +20,15 @@ MiniSky provides a seamless, professional-grade development environment that emu
 ## 🚀 Quick Start
 
 ### Installation
+**Linux & macOS:**
 ```bash
-curl -sSL https://minisky.dev/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/qamarudeenm/minisky/main/install.sh | sh
+```
+
+**Windows (via Scoop):**
+```powershell
+scoop bucket add minisky https://github.com/qamarudeenm/scoop-bucket
+scoop install minisky
 ```
 
 ### Start the Daemon

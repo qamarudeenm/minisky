@@ -2,28 +2,35 @@
 
 MiniSky allows you to manage your local infrastructure using the official Google Cloud Terraform provider. By overriding service endpoints, you can use Terraform to provision buckets, functions, topics, and more on your local machine.
 
+MiniSky is designed to be a **high-fidelity** drop-in replacement for the GCP API. Unlike other emulators, MiniSky correctly emulates **Long-Running Operations (LRO)** and **IAM permissions**, ensuring that your existing Terraform configurations work without specialized "local" workarounds.
+
 ## 1. Provider Configuration
 
-To point Terraform at MiniSky, you must configure the `google` provider with `custom_endpoint` overrides.
+To point Terraform at MiniSky, you must configure the `google` provider with `custom_endpoint` overrides. We recommend using a variable to toggle between `local` and `cloud` environments.
 
 ```hcl
+variable "gcp_environment" {
+  description = "Set to 'local' to use MiniSky"
+  default     = "local"
+}
+
 provider "google" {
   project      = "local-dev-project"
   region       = "us-central1"
   zone         = "us-central1-a"
   
   # Authentication (Emulated)
-  # You can use a dummy token or a key from the MiniSky IAM shim
+  # MiniSky's internal proxy accepts any well-formed token but will not validate it against Google's servers.
   access_token = "minisky-local-token"
 
-  # Endpoint Overrides (Required)
-  storage_custom_endpoint         = "http://localhost:8080/storage/v1/"
-  cloud_functions_custom_endpoint = "http://localhost:8080/v2/"
-  pubsub_custom_endpoint          = "http://localhost:8080/"
-  compute_custom_endpoint         = "http://localhost:8080/compute/v1/"
-  bigquery_custom_endpoint        = "http://localhost:8080/bigquery/v2/"
-  cloud_run_custom_endpoint       = "http://localhost:8080/v2/"
-  firestore_custom_endpoint       = "http://localhost:8080/"
+  # Custom Endpoints for Local Development
+  storage_custom_endpoint         = var.gcp_environment == "local" ? "http://localhost:8080/storage/v1/" : null
+  cloud_functions_custom_endpoint = var.gcp_environment == "local" ? "http://localhost:8080/v2/" : null
+  pubsub_custom_endpoint          = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+  compute_custom_endpoint         = var.gcp_environment == "local" ? "http://localhost:8080/compute/v1/" : null
+  bigquery_custom_endpoint        = var.gcp_environment == "local" ? "http://localhost:8080/bigquery/v2/" : null
+  cloud_run_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/v2/" : null
+  firestore_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/" : null
 }
 ```
 
@@ -49,7 +56,7 @@ provider "google" {
 
 ## 3. Complete Example: `main.tf`
 
-This example creates a storage bucket and a Pub/Sub topic in MiniSky.
+This example creates a storage bucket, a Pub/Sub topic, and a Cloud Function in MiniSky.
 
 ```hcl
 resource "google_storage_bucket" "data_lake" {
@@ -85,14 +92,20 @@ resource "google_cloudfunctions2_function" "processor" {
 }
 ```
 
-## 4. Execution
+## 4. Execution Workflow
 
 1. **Initialize**: `terraform init`
 2. **Plan**: `terraform plan`
 3. **Apply**: `terraform apply`
 
-During the apply process, you can watch the **MiniSky Dashboard** or run `./minisky logs tail` to see the API calls being intercepted and handled by the shims.
+When you run `terraform apply`, MiniSky will:
+1. **Validate API Contract:** Check the incoming HCL request against official Discovery Docs to catch schema errors.
+2. **Handle Identity:** Verify that the provided dummy credentials have the required Mock IAM permissions.
+3. **Trigger Asynchronous Work:** If the resource creation is slow (e.g., a GKE cluster), MiniSky returns an **Operation** token.
+4. **Poll for Completion:** Terraform will poll MiniSky until the internal LRO Manager marks the task as `DONE`.
+5. **Persist State:** Ensure the new resource is saved to the local database for subsequent plans.
 
-## Troubleshooting
-- **SSL Errors**: Ensure you use `http://` instead of `https://` in the endpoints, or set `GODEBUG=http2client=0` if using very old Terraform versions.
+## 5. Troubleshooting
+- **SSL Errors**: Ensure you use `http://` instead of `https://` in the endpoints.
 - **Project Mismatch**: Always use `local-dev-project` as the project ID unless you have specifically configured other projects in the MiniSky settings.
+- **Logs**: Run `minisky logs tail` or watch the **Dashboard** to see the API calls being intercepted.

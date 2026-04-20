@@ -1,79 +1,146 @@
-# MiniSky User Guide
+# MiniSky: The Complete User Guide
 
-Welcome to MiniSky, the **high-fidelity** open-source GCP emulator designed for local development, testing, and collaboration. MiniSky goes beyond simple mocking by providing strict API validation and realistic cloud behavior.
+MiniSky is a high-fidelity GCP emulator designed for local development, testing, and CI/CD. It allows you to run a full GCP cloud environment locally using Docker and a custom API Gateway.
 
-## 1. Quick Start
+## Table of Contents
+1. [Core Configuration](#core-configuration)
+2. [Serverless (Functions & Cloud Run)](#serverless)
+3. [Cloud Storage (GCS)](#cloud-storage)
+4. [Pub/Sub](#pubsub)
+5. [Databases (Firestore, SQL, Bigtable)](#databases)
+6. [Observability (Logging & Monitoring)](#observability)
+7. [BigQuery](#bigquery)
+8. [Lazy Loading & Snapshots](#lazy-loading--snapshots)
 
-### Installation
-- **Linux/Mac:**
-  ```bash
-  curl -sSL https://minisky.io/install.sh | sh
-  ```
-- **Windows (PowerShell):**
-  ```powershell
-  iwr https://minisky.io/install.ps1 | iex
-  ```
-- **Prerequisites:** Docker must be installed and running.
+---
 
-### Starting the Daemon
+## Core Configuration
+
+To use MiniSky, you must point your Google Cloud SDKs to the local gateway.
+
+- **API Gateway**: `http://localhost:8080`
+- **Dashboard**: `http://localhost:8081`
+- **Project ID**: `local-dev-project` (Default)
+
+### Environment Variables
+Set these in your terminal or `.env` file:
 ```bash
-minisky start
+export STORAGE_EMULATOR_HOST=http://localhost:8080
+export PUBSUB_EMULATOR_HOST=http://localhost:8080
+export FIRESTORE_EMULATOR_HOST=localhost:8080
+export BIGQUERY_EMULATOR_HOST=http://localhost:8080
 ```
-By default, the daemon starts on port `8080` (API) and `8081` (Dashboard).
 
 ---
 
-## 2. Using the User Dashboard
-The dashboard is accessible at `http://localhost:8081`. It is designed to look and feel like the GCP Console.
+## Serverless
 
-### Features:
-1. **Service Control Center:** A grid of cards for each supported service. Toggle a switch to "Activate" or "Deactivate" (which starts/stops the underlying Docker containers).
-2. **Project Setup:** Define local Project IDs and global environment variables.
-3. **Resource Explorer:**
-   - **Storage:** Browse buckets, upload files, and view metadata.
-   - **Pub/Sub:** View message counts, push/pull messages manually, and manage subscriptions.
-   - **BigQuery:** A built-in SQL editor connected to the local DuckDB instance.
-4. **Health Monitor:** Real-time CPU and Memory usage for all enabled emulators.
-5. **Logs:** A unified terminal view tailing logs from all active service containers.
+MiniSky uses **Google Cloud Buildpacks** to build production-ready containers from your source code.
 
----
+### Deploying via Dashboard
+1. Go to **Compute Engine Instances** -> **Serverless Console**.
+2. Click **Deploy New**.
+3. Select **Cloud Functions v2** or **Cloud Run**.
+4. Enter your code and click **Deploy**.
 
-## 3. Lazy Loading & Automation
-MiniSky is "Lazy" by default. If you run a command like:
-```bash
-gcloud pubsub topics create my-topic --endpoint-url=http://localhost:8080
+### Event Triggers (GCS)
+You can trigger functions automatically on GCS uploads.
+```python
+def handler(event, context):
+    print(f"Triggered by file: {event['name']}")
 ```
-MiniSky will detect that Pub/Sub is not running, pull the image (if missing), start the container, and then execute your command. This ensures your machine resources are only used when needed.
 
 ---
 
-## 4. Collaboration with Snapshots
+## Cloud Storage
+
+Emulated via `fake-gcs-server`.
+
+### Python Example
+```python
+from google.cloud import storage
+
+# MiniSky automatically handles the emulator host if env var is set
+client = storage.Client()
+bucket = client.bucket("my-bucket")
+blob = bucket.blob("test.txt")
+blob.upload_from_string("Hello MiniSky!")
+```
+
+---
+
+## Pub/Sub
+
+Full support for Topics, Subscriptions (Push & Pull).
+
+### Node.js Example (Publisher)
+```javascript
+const {PubSub} = require('@google-cloud/pubsub');
+const pubsub = new PubSub();
+
+async function publishMessage() {
+  const dataBuffer = Buffer.from('Hello World');
+  await pubsub.topic('my-topic').publishMessage({data: dataBuffer});
+}
+```
+
+---
+
+## Databases
+
+### Firestore
+Standard Firestore emulator integration.
+```python
+from google.cloud import firestore
+db = firestore.Client()
+doc_ref = db.collection("users").document("alace")
+doc_ref.set({"name": "Alice", "active": True})
+```
+
+### Cloud SQL
+MiniSky spins up high-performance Docker containers for MySQL/PostgreSQL.
+- **Access**: Via the local port shown in the **Database Topology** dashboard.
+
+---
+
+## Observability
+
+### Cloud Logging
+All container logs (Serverless, Compute, etc.) are automatically harvested into the **Cloud Logging** dashboard.
+- **Search**: Filter by resource name or text content.
+- **Live Stream**: Real-time log tailing.
+
+### Cloud Monitoring
+Real-time CPU and Memory metrics are collected from all managed containers.
+- View charts in the **Cloud Monitoring** tab.
+
+---
+
+## BigQuery
+
+Powered by **DuckDB** for lightning-fast local analytical queries without the heavy overhead of the official BQ emulator.
+
+```python
+from google.cloud import bigquery
+client = bigquery.Client()
+query = "SELECT count(*) FROM `my-project.my-dataset.my-table`"
+results = client.query(query)
+```
+
+---
+
+## Lazy Loading & Snapshots
+
+### Lazy Loading
+MiniSky is "Lazy" by default. If you run a command like `gcloud pubsub topics create ...`, MiniSky will detect that Pub/Sub is not running, pull the image (if missing), start the container, and then execute your command.
+
+### Collaboration with Snapshots
 MiniSky allows you to share your environment state with your team.
-
-- **Save your state:**
-  ```bash
-  minisky state save --name=testing-feature-x
-  ```
-  This creates a compressed bundle of all database files and storage buckets.
-- **Share/Load:**
-  Share the `.minisky` file with a teammate. They can load it with:
-  ```bash
-  minisky state load testing-feature-x.minisky
-  ```
-  All services will restart with the exact data and **resource states** you had.
+- **Save your state**: `minisky state save --name=testing-feature-x`
+- **Share/Load**: Share the `.minisky` file. Teammates can load it with `minisky state load testing-feature-x.minisky`.
 
 ---
 
-## 5. High-Fidelity Features
-MiniSky is built to handle complex production scenarios locally:
-- **Terraform Readiness:** Supports Long-Running Operations (LRO), ensuring `terraform apply` works without modification.
-- **Contract Validation:** Catches malformed API requests locally by validating against official GCP Discovery Docs.
-- **IAM Simulation:** Test your service account permissions before they hit production.
+## System Diagnostics
 
----
-
-## 6. Development Workflow
-1. **Define Infrastructure:** Use Terraform with `custom_endpoint` overrides (see [Terraform Guide](terraform-integration.md)).
-2. **Develop:** Point your application SDKs (Go, Python, Java, etc.) to `http://localhost:8080`.
-3. **Debug:** Use the Dashboard at `http://localhost:8081` to inspect resources.
-4. **Test:** Run your CI/CD pipelines against a headless instance of MiniSky.
+Use the **System Diagnostics** page to check if required tools like `docker`, `pack`, and `kind` are installed. MiniSky can automatically fix many missing dependencies for you.

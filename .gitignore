@@ -48,3 +48,15 @@ tmp/
 !ui/.env.example
 
 release.sh
+
+# Internal Documentation (Restricted)
+docs/dataproc*
+docs/dashboard-api.md
+docs/deep-research-results.md
+docs/high-fidelity-design.md
+docs/images_management.md
+docs/network-firewall.md
+docs/project description.txt
+docs/service-catalog.md
+docs/task.md
+docs/ui-component-architecture.md
