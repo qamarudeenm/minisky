@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	cloud.google.com/go/bigtable v1.46.0
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/marcboeker/go-duckdb v1.8.5
 	github.com/spf13/cobra v1.10.2
@@ -23,7 +24,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
-	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/apache/arrow-go/v18 v18.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect

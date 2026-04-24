@@ -4,11 +4,9 @@ package orchestrator
 
 import (
 	"context"
-	"log"
 	"net"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/Microsoft/go-winio"
 )
