@@ -68,5 +68,7 @@ docs/images/*
 docs/medium-article.md
 docs/social-media-content.md
 docs/target-audience.md
-
+docs/nginx_domain_setup_guide.md
+docs/minisky_web_design.md
+DESIGN.md
 .claude

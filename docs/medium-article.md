@@ -18,6 +18,8 @@ Until now.
 
 This article explains what MiniSky is, why we built it the way we did, and how it can transform your development workflow.
 
+![MiniSky System Diagnostics Dashboard](images/Screenshot%20from%202026-04-20%2013-17-02.png)
+
 ---
 
 ## The Problem: Why Existing GCP Emulators Fall Short
@@ -106,6 +108,8 @@ MiniSky ships with support for the following GCP services:
 | **Cloud Logging** | Container log aggregation | Unified log stream |
 | **Cloud Monitoring** | Container metrics collection | CPU/Memory dashboards |
 
+![Cloud SQL Instance Management in MiniSky](images/Screenshot%20from%202026-04-20%2013-53-46.png)
+
 All of these services are accessible through a single API gateway at `http://localhost:8080`. No separate ports. No separate configurations. One endpoint, just like the real cloud.
 
 ---
@@ -137,6 +141,10 @@ A React-based single page application that mirrors the GCP Console experience. F
 - Monitor CPU and memory usage across all emulated services
 
 The dashboard isn't an afterthought. It's a first-class interface designed to give you the same operational visibility locally that the GCP Console gives you in the cloud.
+
+![Cloud Monitoring Dashboard showing real-time resource usage](images/Screenshot%20from%202026-04-20%2016-43-19.png)
+
+![Cloud Logging Interface for unified log aggregation](images/Screenshot%20from%202026-04-20%2016-43-24.png)
 
 ---
 
@@ -184,6 +192,8 @@ When you submit a Dataproc job that references a `gs://` URI, MiniSky:
 
 The result: your PySpark job reads from and writes to `gs://` buckets that exist entirely on your machine. No cloud. No credentials. No cost.
 
+![BigQuery Analytical Workspace powered by DuckDB](images/Screenshot%20from%202026-04-20%2014-22-36.png)
+
 ---
 
 ## Real-World Use Case: Event-Driven Architectures
@@ -191,6 +201,8 @@ The result: your PySpark job reads from and writes to `gs://` buckets that exist
 MiniSky supports Cloud Storage event triggers out of the box. Deploy a Cloud Function, configure it to trigger on `google.storage.object.finalize`, upload a file to a bucket, and watch the function execute — all locally.
 
 This is particularly valuable for teams building data pipelines where files landing in GCS trigger downstream processing. Testing this flow end-to-end previously required a real cloud environment. With MiniSky, it runs on your laptop in seconds.
+
+![Serverless Console for Cloud Functions and Cloud Run](images/Screenshot%20from%202026-04-20%2013-43-22.png)
 
 ---
 
@@ -201,6 +213,8 @@ Most emulators ignore networking entirely. MiniSky doesn't.
 When you create a VPC through the Compute Engine API, MiniSky provisions a real Docker bridge network. VMs on different VPCs are genuinely isolated — you cannot ping across them. When you create a firewall rule, MiniSky tears down affected containers and re-provisions them with the correct port bindings.
 
 This isn't theater. It's real network isolation backed by Docker's networking stack, mapped to GCP's VPC and firewall concepts.
+
+![Networking and VPC Configuration in MiniSky](images/Screenshot%20from%202026-04-20%2016-43-31.png)
 
 ---
 

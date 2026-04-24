@@ -72,11 +72,7 @@ function NavigationContent() {
       >
         {/* Logo */}
         <Box sx={{ p: 4, display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid #dadce0' }}>
-          <Box sx={{
-            width: 36, height: 36, borderRadius: '8px', background: '#1a73e8',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 600, fontSize: '1.2rem', fontFamily: 'monospace'
-          }}>M</Box>
+          <img src="/minisky_logo.png" alt="MiniSky Logo" style={{ width: 36, height: 36, objectFit: 'contain' }} />
           <Typography variant="h6" sx={{ letterSpacing: '0.01em', fontWeight: 500, color: '#3c4043' }}>
             MiniSky v{version}
           </Typography>

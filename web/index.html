@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniSky | Google Cloud. Now on localhost.</title>
+    <meta name="description" content="The premium open-source GCP emulator. Real infrastructure, visual dashboard, zero cloud bills.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Roboto+Mono&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+</head>
+<body>
+
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="logo-link">
+                <img src="images/minisky_logo.png" alt="MiniSky Logo" class="logo-mark" style="height: 24px; width: auto;">
+                <span class="logo-text">MiniSky</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#dashboard">Dashboard</a>
+                <a href="#terraform">Terraform</a>
+                <a href="#cli">CLI Guide</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Section 1: Hero -->
+    <header class="section-hero section-dark">
+        <div class="container hero-content">
+            <h1 class="headline">Google Cloud.<br>Now on localhost.</h1>
+            <p class="sub-headline">The premium open-source GCP emulator. Real infrastructure, visual dashboard, zero cloud bills.</p>
+            <div class="cta-group">
+                <a href="#install" class="btn btn-primary">Download MiniSky</a>
+                <a href="https://github.com/qamarudeenm/minisky" target="_blank" class="btn btn-secondary">View on GitHub</a>
+            </div>
+        </div>
+        <div class="hero-image-wrapper">
+            <img src="images/hero.png" alt="MiniSky Dashboard System Diagnostics View" class="hero-image">
+        </div>
+    </header>
+
+    <!-- Section 2: Value Pillars -->
+    <section id="features" class="section-values section-light-gray">
+        <div class="container">
+            <h2 class="section-title">Real infrastructure. Zero friction.</h2>
+            <div class="grid-3">
+                <div class="value-card">
+                    <div class="icon-wrapper bg-blue">⚡</div>
+                    <h3>Lightweight Go Binary</h3>
+                    <p>Developed purely in Go as a single, ultra-light binary. All core services utilize lazy loading, spinning up in under 100 milliseconds only when requested.</p>
+                </div>
+                <div class="value-card">
+                    <div class="icon-wrapper bg-green">💸</div>
+                    <h3>Zero Bills</h3>
+                    <p>Develop, test, and run CI/CD pipelines offline. Never pay for local dev again.</p>
+                </div>
+                <div class="value-card">
+                    <div class="icon-wrapper bg-yellow">🛠️</div>
+                    <h3>Exact Parity</h3>
+                    <p>Works natively with official GCP SDKs. Just point your emulator host variables.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3: Dashboard Showcase -->
+    <section id="dashboard" class="section-showcase section-black">
+        <div class="container text-center">
+            <h2 class="section-title text-white">Your cloud, visualized.</h2>
+            <p class="section-subtitle">Stop guessing what's in your emulator. View logs, manage buckets, and inspect pub/sub topics directly from the embedded UI.</p>
+        </div>
+        <div class="showcase-image-wrapper">
+            <img src="images/dashboard.png" alt="MiniSky Dashboard Service Management Interface" class="showcase-image">
+        </div>
+    </section>
+
+    <!-- Section: Terraform Integration -->
+    <section id="terraform" class="section-terraform section-white">
+        <div class="container install-container">
+            <div class="install-text">
+                <h2 class="section-title">First-class Terraform support.</h2>
+                <p>MiniSky is the first emulator that treats Long-Running Operations (LRO) as first-class citizens. When you run <code>terraform apply</code>, your code natively polls transitions like <code>PROVISIONING</code> &rarr; <code>RUNNING</code> exactly like production.</p>
+                <p>Simply point the custom endpoint in your provider configuration to your local machine.</p>
+            </div>
+            <div class="install-code">
+                <div class="code-header">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                    <span class="terminal-title">main.tf</span>
+                </div>
+                <pre><code><span class="comment"># Override the provider endpoint</span>
+provider "google" {
+  project = "local-project"
+  region  = "us-central1"
+  
+  <span class="command">custom_endpoint</span> = "http://localhost:8080/"
+}</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section: CLI Guide -->
+    <section id="cli" class="section-cli section-light-gray">
+        <div class="container text-center">
+            <h2 class="section-title">The MiniSky CLI</h2>
+            <p class="section-subtitle">Manage your local cloud entirely from the terminal. One binary to rule them all.</p>
+            
+            <div class="grid-3" style="margin-top: 40px; text-align: left;">
+                <div class="value-card">
+                    <h3>Core Commands</h3>
+                    <p style="margin-bottom: 12px;"><code>minisky start</code><br>
+                    <span class="text-muted">Starts the daemon and API router</span></p>
+                    <p style="margin-bottom: 12px;"><code>minisky stop</code><br>
+                    <span class="text-muted">Stops the MiniSky daemon</span></p>
+                    <p><code>minisky restart</code><br>
+                    <span class="text-muted">Restarts the daemon</span></p>
+                </div>
+                <div class="value-card">
+                    <h3>Resource Management</h3>
+                    <p style="margin-bottom: 12px;"><code>minisky deploy</code><br>
+                    <span class="text-muted">Deploy a serverless resource</span></p>
+                    <p style="margin-bottom: 12px;"><code>minisky list</code><br>
+                    <span class="text-muted">List all active resources</span></p>
+                    <p><code>minisky logs</code><br>
+                    <span class="text-muted">Manage Cloud Logging output</span></p>
+                </div>
+                <div class="value-card">
+                    <h3>Service Emulation</h3>
+                    <p style="margin-bottom: 8px;"><code>minisky compute</code></p>
+                    <p style="margin-bottom: 8px;"><code>minisky storage</code></p>
+                    <p style="margin-bottom: 8px;"><code>minisky pubsub</code></p>
+                    <p style="margin-bottom: 8px;"><code>minisky sql</code></p>
+                    <p style="margin-bottom: 8px;"><code>minisky spanner</code></p>
+                    <span class="text-muted">Manage specific service instances</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 4: Installation -->
+    <section id="install" class="section-install section-white">
+        <div class="container install-container">
+            <div class="install-text">
+                <h2 class="section-title">Start building in seconds.</h2>
+                <p>MiniSky acts as a drop-in replacement. Simply install the lightweight Go binary, start the server, and your standard GCP libraries will connect automatically through lazy-loaded services.</p>
+            </div>
+            <div class="install-code">
+                <div class="code-header">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                    <span class="terminal-title">bash</span>
+                </div>
+                <pre><code><span class="comment"># 1. Install MiniSky</span>
+<span class="command">curl</span> -sSL https://minisky.bmics.com.ng/install.sh | <span class="command">bash</span>
+
+<span class="comment"># 2. Start the emulator</span>
+minisky start
+
+<span class="comment"># 3. Export environment and run your app</span>
+<span class="command">eval</span> $(minisky env)
+
+<span class="comment"># Your app will now route to localhost automatically</span>
+<span class="command">npm</span> start      <span class="comment"># For Node.js apps</span>
+<span class="command">python</span> app.py  <span class="comment"># For Python apps</span>
+<span class="command">go run</span> main.go <span class="comment"># For Go apps</span></code></pre>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container footer-content">
+            <p>&copy; 2026 MiniSky Project. Built for the community.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

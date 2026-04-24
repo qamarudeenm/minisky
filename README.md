@@ -2,10 +2,14 @@
 
 **High-Fidelity local emulator for Google Cloud Platform.**
 
+**Official Website:** [minisky.bmics.com.ng](https://minisky.bmics.com.ng)
+
 MiniSky provides a seamless, professional-grade development environment that emulates GCP services locally. It allows developers to test Infrastructure-as-Code (Terraform), Serverless functions, and complex data workflows without incurring cloud costs or requiring an internet connection.
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/qamarudeenm/minisky)](https://goreportcard.com/report/github.com/qamarudeenm/minisky)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Mini Movement](https://img.shields.io/badge/Mini-Family-blue.svg)](https://github.com/topics/mini-cloud)
+[![High Fidelity](https://img.shields.io/badge/Fidelity-High-green.svg)](#)
 
 ---
 
@@ -15,7 +19,7 @@ MiniSky provides a seamless, professional-grade development environment that emu
 - **🖥️ Embedded Dashboard**: Real-time observability and resource management via a premium web UI.
 - **🛠️ Terraform Ready**: First-class support for the official Google Cloud Terraform provider via custom endpoint routing.
 - **🔌 Dynamic Registry**: Modular plugin system for community-led service contributions.
-- **📦 Single Binary**: Distributed as a single, portable binary with zero external Go dependencies (uses Docker for backends).
+- **📦 Single Binary**: Developed entirely in Go. A single, ultra-lightweight binary where all services are lazy-loaded for maximum efficiency and sub-100ms startup times.
 
 ## 🚀 Quick Start
 

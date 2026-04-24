@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MiniSky Universal Installer
-# Usage: curl -sSL https://minisky.dev/install.sh | sh
+# Usage: curl -sSL https://minisky.bmics.com.ng/install.sh | bash
 
 set -e
 
