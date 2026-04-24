@@ -6,6 +6,7 @@ project_name: minisky
 before:
   hooks:
     - go mod tidy
+    - bash -c "cd ui && npm run build"
 
 builds:
   - id: linux
@@ -79,8 +80,8 @@ release:
   prerelease: auto
   mode: replace
   header: |
-    ## MiniSky v1.0.0 - Analytical Engine & BigQuery Support
-    This release brings high-fidelity BigQuery emulation powered by DuckDB.
+    ## MiniSky {{ .Tag }}
+    This release includes critical bug fixes and documentation updates.
   footer: |
     **Full Changelog**: https://github.com/qamarudeenm/minisky/compare/{{ .PreviousTag }}...{{ .Tag }}
 
