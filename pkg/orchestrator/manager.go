@@ -59,22 +59,21 @@ type FirewallEntry struct {
 
 func NewServiceManager() (*ServiceManager, error) {
 	sockPath := resolveDockerSocket()
-	if os.Getenv("DOCKER_HOST") == "" { 
+	// On Unix, ensure DOCKER_HOST is set if we found a socket
+	if !strings.HasPrefix(sockPath, "//./pipe/") && os.Getenv("DOCKER_HOST") == "" { 
 		os.Setenv("DOCKER_HOST", "unix://"+sockPath); 
 	}
 	log.Printf("[ServiceManager] Docker socket resolved: %s", sockPath)
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", sockPath)
-		},
-	}
-	return &ServiceManager{
-		dockerClient: &http.Client{Transport: transport},
+	sm := &ServiceManager{
 		sockPath:     sockPath,
 		portRegistry: make(map[string][]PortMapping),
 		fwRules:      make(map[string][]FirewallEntry),
-	}, nil
+	}
+	transport := &http.Transport{
+		DialContext: sm.dialDocker,
+	}
+	sm.dockerClient = &http.Client{Transport: transport}
+	return sm, nil
 }
 
 // EnsureNetwork creates the isolated minisky-net bridge network if it doesn't exist.
@@ -895,29 +894,7 @@ func (sm *ServiceManager) waitUntilReady(addr string, timeout time.Duration) err
 	return fmt.Errorf("'%s' not reachable after %s", addr, timeout)
 }
 
-// resolveDockerSocket auto-detects the correct Docker socket across all environments.
-func resolveDockerSocket() string {
-	// 1. Explicit DOCKER_HOST env var (standard Docker convention)
-	if host := os.Getenv("DOCKER_HOST"); host != "" {
-		return strings.TrimPrefix(host, "unix://")
-	}
-	// 2. Probe known locations in priority order
-	candidates := []string{
-		filepath.Join(os.Getenv("HOME"), ".docker", "desktop", "docker.sock"), // Docker Desktop (Linux/Mac)
-		filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "docker.sock"),            // Rootless Docker
-		filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "podman", "podman.sock"),  // Podman
-		"/var/run/docker.sock", // Classic system Docker
-	}
-	for _, p := range candidates {
-		if p == "" {
-			continue
-		}
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return "/var/run/docker.sock"
-}
+// resolveDockerSocket and dialDocker are implemented in OS-specific files (dialer_unix.go, dialer_windows.go)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 1: VPC Network Management
@@ -1133,7 +1110,7 @@ func (sm *ServiceManager) StreamContainerExec(name string) (net.Conn, error) {
 
 	// 2. Start and Hijack the connection
 	// We must dial the socket directly to bypass http.Client's pooling and response handling
-	conn, err := net.Dial("unix", sm.sockPath)
+	conn, err := sm.dialDocker(context.Background(), "", "")
 	if err != nil {
 		return nil, err
 	}

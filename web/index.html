@@ -148,28 +148,30 @@ provider "google" {
         <div class="container install-container">
             <div class="install-text">
                 <h2 class="section-title">Start building in seconds.</h2>
-                <p>MiniSky acts as a drop-in replacement. Simply install the lightweight Go binary, start the server, and your standard GCP libraries will connect automatically through lazy-loaded services.</p>
+                <p><strong>Prerequisites:</strong> Ensure <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop</a> and <a href="https://git-scm.com/downloads" target="_blank">Git</a> are installed.</p>
+                <p>MiniSky acts as a drop-in replacement. Simply install the lightweight Go binary, start the server, and your standard GCP libraries will connect automatically.</p>
+                
+                <h4 style="margin-top: 20px;">Windows (Scoop)</h4>
+                <p>If you don't have Scoop, install it via PowerShell:</p>
+                <pre style="background: #f4f4f4; padding: 10px; border-radius: 4px; font-size: 13px;"><code>Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+irm https://get.scoop.sh | iex</code></pre>
             </div>
             <div class="install-code">
                 <div class="code-header">
                     <span class="dot red"></span>
                     <span class="dot yellow"></span>
                     <span class="dot green"></span>
-                    <span class="terminal-title">bash</span>
+                    <span class="terminal-title">Installation</span>
                 </div>
-                <pre><code><span class="comment"># 1. Install MiniSky</span>
+                <pre><code><span class="comment"># Linux / macOS</span>
 <span class="command">curl</span> -sSL https://minisky.bmics.com.ng/install.sh | <span class="command">bash</span>
 
-<span class="comment"># 2. Start the emulator</span>
-minisky start
+<span class="comment"># Windows (after Scoop is ready)</span>
+<span class="command">scoop</span> bucket add minisky https://github.com/qamarudeenm/scoop-bucket
+<span class="command">scoop</span> install minisky
 
-<span class="comment"># 3. Export environment and run your app</span>
-<span class="command">eval</span> $(minisky env)
-
-<span class="comment"># Your app will now route to localhost automatically</span>
-<span class="command">npm</span> start      <span class="comment"># For Node.js apps</span>
-<span class="command">python</span> app.py  <span class="comment"># For Python apps</span>
-<span class="command">go run</span> main.go <span class="comment"># For Go apps</span></code></pre>
+<span class="comment"># Start the emulator</span>
+minisky start</code></pre>
             </div>
         </div>
     </section>

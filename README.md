@@ -21,6 +21,11 @@ MiniSky provides a seamless, professional-grade development environment that emu
 - **🔌 Dynamic Registry**: Modular plugin system for community-led service contributions.
 - **📦 Single Binary**: Developed entirely in Go. A single, ultra-lightweight binary where all services are lazy-loaded for maximum efficiency and sub-100ms startup times.
 
+## 📋 Prerequisites
+MiniSky requires the following tools installed and running on your local machine:
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**: Used for high-fidelity service emulation (Compute, SQL, etc.).
+- **[Git](https://git-scm.com/downloads)**: Required for installation and plugin management.
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -29,7 +34,14 @@ MiniSky provides a seamless, professional-grade development environment that emu
 curl -sSL https://raw.githubusercontent.com/qamarudeenm/minisky/main/install.sh | sh
 ```
 
-**Windows (via Scoop):**
+**Windows:**
+MiniSky is distributed via [Scoop](https://scoop.sh/). If you don't have Scoop installed, run this first in PowerShell:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+```
+
+Then, install MiniSky:
 ```powershell
 scoop bucket add minisky https://github.com/qamarudeenm/scoop-bucket
 scoop install minisky
@@ -63,6 +75,7 @@ MiniSky is cross-platform, but some features have varying support levels:
 
 - [CLI Reference](docs/cli_reference.md)
 - [Terraform Guide](docs/terraform.md)
+- [Changelog](CHANGELOG.md)
 - [Contributor Guide](CONTRIBUTING.md)
 
 ## 🤝 Contributing
