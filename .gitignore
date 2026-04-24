@@ -50,25 +50,14 @@ tmp/
 
 release.sh
 
-# Internal Documentation (Restricted)
-docs/dataproc*
-docs/dashboard-api.md
-docs/deep-research-results.md
-docs/high-fidelity-design.md
-docs/images_management.md
-docs/network-firewall.md
-docs/project description.txt
-docs/service-catalog.md
-docs/task.md
-docs/ui-component-architecture.md
-docs/marketing-posts.md
-docs/event-architecture-alternative.md
-docs/event_triggers.md
-docs/images/*
-docs/medium-article.md
-docs/social-media-content.md
-docs/target-audience.md
-docs/nginx_domain_setup_guide.md
-docs/minisky_web_design.md
+# Documentation
+docs/*
+!docs/terraform.md
+!docs/user-guide.md
+!docs/contribution-guide.md
+!docs/changelog.md
+!docs/cli_reference.md
+
+
 DESIGN.md
 .claude
