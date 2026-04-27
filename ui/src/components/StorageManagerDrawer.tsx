@@ -23,11 +23,8 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
   const [currentBucket, setCurrentBucket] = useState<string | null>(null);
   const [objects, setObjects] = useState<any[]>([]);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const loadBuckets = async () => {
-    setLoading(true);
     try {
       const res = await fetch(`/api/manage/storage/projects/${activeProject}/b`);
       if (res.ok) {
@@ -36,8 +33,6 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
       }
     } catch (e) {
       console.error(e);
-    } finally {
-      setLoading(false);
     }
   };
 

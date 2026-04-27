@@ -6,6 +6,7 @@ import SecurityIcon from '@mui/icons-material/Security';
 import StorageIcon from '@mui/icons-material/Storage';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import LockIcon from '@mui/icons-material/LockOutlined';
 import { Service } from '../hooks/useServices';
 
 type ServiceCardProps = {
@@ -40,6 +41,7 @@ export default function ServiceCard({
       case 'spanner': return <StorageIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'appengine': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'memorystore': return <StorageIcon sx={{ color: '#c5221f', fontSize: '1.2rem' }}/>;
+      case 'secretmanager': return <LockIcon sx={{ color: '#1e8e3e', fontSize: '1.2rem' }}/>;
       case 'firebase-auth':
       case 'firebase-rtdb':
       case 'firebase-hosting':
@@ -184,6 +186,10 @@ export default function ServiceCard({
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Jobs</Button>
           )}
 
+          {s.id === 'secretmanager' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Secrets</Button>
+          )}
+
           {s.id === 'spanner' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Spanner</Button>
           )}
@@ -196,10 +202,6 @@ export default function ServiceCard({
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage App Engine</Button>
           )}
 
-          {s.id === 'memorystore' && s.status === 'RUNNING' && onManage && (
-            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Memorystore</Button>
-          )}
-          
           {s.id === 'serverless' && s.missingDeps?.includes('pack') && onInstallDependency && (
             <Button size="small" variant="contained" color="warning" onClick={() => onInstallDependency('pack')} sx={{ fontWeight: 600 }}>Fix Missing Tool (pack)</Button>
           )}

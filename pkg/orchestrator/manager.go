@@ -446,7 +446,7 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 	payload := map[string]interface{}{
 		"Image":        osImage,
 		"Cmd":          cmd,
-		"Env":          env,
+		"Env":          append(sm.standardEnv(), env...),
 		"ExposedPorts": exposedPorts,
 		"HostConfig": map[string]interface{}{
 			"NetworkMode":  netMode,
@@ -498,10 +498,10 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 		if image == "" {
 			image = reg.Sql.Postgres.DefaultImage
 		}
-		env = []string{
+		env = append(sm.standardEnv(), 
 			"POSTGRES_PASSWORD=" + rootPassword,
 			"PGDATA=/var/lib/postgresql/data",
-		}
+		)
 		expPort = "5432/tcp"
 	} else if strings.HasPrefix(version, "MYSQL") {
 		vparts := strings.Split(version, "_")
@@ -521,7 +521,7 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 		if image == "" {
 			image = reg.Sql.Mysql.DefaultImage
 		}
-		env = []string{"MYSQL_ROOT_PASSWORD=" + rootPassword}
+		env = append(sm.standardEnv(), "MYSQL_ROOT_PASSWORD=" + rootPassword)
 		expPort = "3306/tcp"
 	} else {
 		return "", fmt.Errorf("unsupported database version: %s", version)
@@ -656,7 +656,7 @@ func (sm *ServiceManager) ProvisionServerlessVM(resourceName string, image strin
 	expPort := "8080/tcp"
 	payload := map[string]interface{}{
 		"Image": image,
-		"Env":   env,
+		"Env":   append(sm.standardEnv(), env...),
 		"ExposedPorts": map[string]interface{}{
 			expPort: struct{}{},
 		},
@@ -1287,4 +1287,17 @@ func (sm *ServiceManager) GetContainerStats(name string) (*ContainerStats, error
 	stats.MemoryUsageMB = float64(memUsage) / 1024.0 / 1024.0
 
 	return stats, nil
+}
+func (sm *ServiceManager) standardEnv() []string {
+	return []string{
+		"SECRET_MANAGER_EMULATOR_HOST=minisky-secretmanager:8080",
+		"PUBSUB_EMULATOR_HOST=minisky-pubsub:8085",
+		"FIRESTORE_EMULATOR_HOST=minisky-firestore:8082",
+		"DATASTORE_EMULATOR_HOST=minisky-datastore:8081",
+		"BIGTABLE_EMULATOR_HOST=minisky-bigtable:8086",
+		"STORAGE_EMULATOR_HOST=http://minisky-gcs:4443",
+		"GOOGLE_CLOUD_PROJECT=default-project",
+		// Internal gateway for REST shims
+		"MINISKY_GATEWAY=172.17.0.1:8080",
+	}
 }

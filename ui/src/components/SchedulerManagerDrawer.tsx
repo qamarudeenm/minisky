@@ -4,6 +4,7 @@ import {
   Stack, Divider, Alert, Tab, Tabs
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 interface Props {
   open: boolean;

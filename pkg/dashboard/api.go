@@ -101,6 +101,7 @@ func NewAPIHandler(
 	mux.Handle("/api/manage/appengine/", api.handleManageAppEngine())
 	mux.Handle("/api/manage/memorystore/", api.handleManageMemorystore())
 	mux.Handle("/api/manage/scheduler/", api.handleManageScheduler())
+	mux.Handle("/api/manage/secretmanager/", api.handleManageSecretManager())
 	return mux
 }
 
@@ -203,6 +204,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "appengine", Name: "app-engine", Label: "App Engine", Status: "RUNNING", Port: nil, Description: "Deploy and version serverless applications with zero infrastructure management"},
 		{ID: "memorystore", Name: "cloud-memorystore", Label: "Memorystore", Status: "RUNNING", Port: nil, Description: "In-memory data store for Redis and Memcached"},
 		{ID: "scheduler", Name: "cloud-scheduler", Label: "Cloud Scheduler", Status: "RUNNING", Port: nil, Description: "Managed cron job service for triggering HTTP/PubSub endpoints"},
+		{ID: "secretmanager", Name: "secret-manager", Label: "Secret Manager", Status: "RUNNING", Port: nil, Description: "Secure storage for sensitive information with versioning and audit logs"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -595,6 +597,23 @@ func (api *API) handleManageScheduler() http.Handler {
 		req.URL.Path = "/v1" + path
 		req.Host = "cloudscheduler.googleapis.com"
 		log.Printf("[UI/API Proxy] Scheduler \u2192 %s", req.URL.Path)
+	}
+	return proxy
+}
+
+func (api *API) handleManageSecretManager() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/secretmanager")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		req.URL.Path = "/v1" + path
+		req.Host = "secretmanager.googleapis.com"
+		log.Printf("[UI/API Proxy] Secret Manager \u2192 %s", req.URL.Path)
 	}
 	return proxy
 }

@@ -22,6 +22,7 @@ import (
 	_ "minisky/pkg/shims/monitoring"
 	_ "minisky/pkg/shims/pubsub"
 	_ "minisky/pkg/shims/scheduler"
+	_ "minisky/pkg/shims/secretmanager"
 	_ "minisky/pkg/shims/serverless"
 	_ "minisky/pkg/shims/storage"
 )
