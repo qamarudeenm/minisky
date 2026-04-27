@@ -138,13 +138,13 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 	if status != "running" {
 		log.Printf("[Orchestrator] Cold-starting '%s' for domain '%s'...", iconfig.Name, domain)
 		if status == "not_found" {
-			exists, err := sm.imageExists(iconfig.Image)
+			exists, err := sm.ImageExistsPublic(iconfig.Image)
 			if err != nil {
 				log.Printf("[Orchestrator] Image check error: %v", err)
 			}
 			if !exists {
 				log.Printf("[Orchestrator] Pulling image '%s'...", iconfig.Image)
-				if err := sm.pullImage(iconfig.Image); err != nil {
+				if err := sm.pullImageInternal(iconfig.Image); err != nil {
 					log.Printf("[Orchestrator] Image pull warning: %v", err)
 				}
 				log.Printf("[Orchestrator] Image '%s' pull complete.", iconfig.Image)
@@ -381,7 +381,7 @@ func (sm *ServiceManager) CheckStatusPublic(name string) (string, error) {
 	return sm.checkStatus(name)
 }
 
-func (sm *ServiceManager) pullImage(image string) error {
+func (sm *ServiceManager) pullImageInternal(image string) error {
 	req, _ := http.NewRequest("POST", fmt.Sprintf("http://localhost/images/create?fromImage=%s", image), nil)
 	resp, err := sm.dockerClient.Do(req)
 	if err != nil {
@@ -392,7 +392,7 @@ func (sm *ServiceManager) pullImage(image string) error {
 	return nil
 }
 
-func (sm *ServiceManager) imageExists(image string) (bool, error) {
+func (sm *ServiceManager) ImageExistsPublic(image string) (bool, error) {
 	// Docker inspect image endpoint
 	url := fmt.Sprintf("http://localhost/images/%s/json", image)
 	resp, err := sm.dockerClient.Get(url)
@@ -415,12 +415,12 @@ func (sm *ServiceManager) imageExists(image string) (bool, error) {
 func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcName string, ports []string, env []string) error {
 	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpc: %s ports: %d env: %d)", containerName, osImage, vpcName, len(ports), len(env))
 	
-	exists, err := sm.imageExists(osImage)
+	exists, err := sm.ImageExistsPublic(osImage)
 	if err != nil {
 		log.Printf("[Orchestrator] Image check error for %s: %v", osImage, err)
 	}
 	if !exists {
-		if err := sm.pullImage(osImage); err != nil {
+		if err := sm.pullImageInternal(osImage); err != nil {
 			log.Printf("[Orchestrator] Data Plane pull warning for %s: %v", osImage, err)
 		}
 	} else {
@@ -531,12 +531,12 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 	containerName := "minisky-sql-" + instanceName
 	log.Printf("[Orchestrator] Provisioning Cloud SQL VM: %s (image: %s)", containerName, image)
 
-	exists, err := sm.imageExists(image)
+	exists, err := sm.ImageExistsPublic(image)
 	if err != nil {
 		log.Printf("[Orchestrator] Image check error for %s: %v", image, err)
 	}
 	if !exists {
-		if err := sm.pullImage(image); err != nil {
+		if err := sm.pullImageInternal(image); err != nil {
 			log.Printf("[Orchestrator] Pull warning for %s: %v", image, err)
 		}
 	} else {

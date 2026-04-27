@@ -68,6 +68,11 @@ func (sm *ServiceManager) InstallDependency(id string) error {
 			DownloadURL: fmt.Sprintf("https://github.com/buildpacks/pack/releases/download/%s/pack-%s-%s.%s", PackVersion, PackVersion, osName, ext),
 		}
 	default:
+		if strings.HasPrefix(id, "docker-image:") {
+			image := strings.TrimPrefix(id, "docker-image:")
+			log.Printf("[Deps] Pulling docker image: %s", image)
+			return sm.pullImageInternal(image)
+		}
 		return fmt.Errorf("unsupported dependency: %s", id)
 	}
 

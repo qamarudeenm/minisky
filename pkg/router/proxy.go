@@ -90,6 +90,14 @@ func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Router] Path-mapped local request: %s -> %s", r.URL.Path, targetDomain)
 	}
 
+	// 2. Subdomain Flattening (e.g. project-id.firebaseio.com -> firebaseio.com)
+	if strings.HasSuffix(targetDomain, ".firebaseio.com") {
+		targetDomain = "firebaseio.com"
+	} else if strings.HasSuffix(targetDomain, ".googleapis.com") {
+		// Some services use [service].googleapis.com, we want the base domain if needed
+		// But usually we register the full domain. For now, keep as is unless it's a known multi-subdomain service.
+	}
+
 	log.Printf("[Router] %s %s%s", r.Method, targetDomain, r.URL.Path)
 
 	// 2. Schema Validation

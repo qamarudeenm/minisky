@@ -85,6 +85,7 @@ func NewAPIHandler(
 	mux.HandleFunc("/api/manage/logging/entries", api.handleLoggingEntries)
 	mux.HandleFunc("/api/manage/logging/container", api.handleContainerLogs)
 	mux.HandleFunc("/api/manage/monitoring/stats", api.handleMonitoringStats)
+	mux.Handle("/api/manage/firebase/", api.handleManageFirebase())
 	return mux
 }
 
@@ -112,6 +113,15 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 	btStatus, btPort := api.checkDockerStatus("minisky-bigtable", 8086)
 	dsStatus, dsPort := api.checkDockerStatus("minisky-datastore", 8081)
 	spStatus, spPort := api.checkDockerStatus("minisky-spanner", 9020)
+	authStatus, authPort := api.checkDockerStatus("minisky-firebase-auth", 9099)
+	rtdbStatus, rtdbPort := api.checkDockerStatus("minisky-firebase-rtdb", 9000)
+	hostingStatus, hostingPort := api.checkDockerStatus("minisky-firebase-hosting", 5000)
+
+	var firebaseDeps []string
+	fbImage := "andreysenov/firebase-tools:latest"
+	if exists, _ := api.svcMgr.ImageExistsPublic(fbImage); !exists {
+		firebaseDeps = []string{"docker-image:" + fbImage}
+	}
 
 	// 2. Check Deep Integrations (Native Shims)
 	bqStatus := "SLEEPING"
@@ -172,6 +182,9 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "bigtable", Name: "cloud-bigtable", Label: "Cloud Bigtable", Status: btStatus, Port: btPort, Description: "REST-to-gRPC Admin Bridge for high-performance NoSQL"},
 		{ID: "datastore", Name: "cloud-datastore", Label: "Cloud Datastore", Status: dsStatus, Port: dsPort, Description: "Official GCP emulator for legacy Datastore mode storage"},
 		{ID: "spanner", Name: "cloud-spanner", Label: "Cloud Spanner", Status: spStatus, Port: spPort, Description: "High-performance relational database with global scale"},
+		{ID: "firebase-auth", Name: "firebase-auth", Label: "Firebase Authentication", Status: authStatus, Port: authPort, Description: "Local identity toolkit for user management and auth tokens", MissingDeps: firebaseDeps},
+		{ID: "firebase-rtdb", Name: "firebase-rtdb", Label: "Firebase Realtime Database", Status: rtdbStatus, Port: rtdbPort, Description: "NoSQL cloud database that synchronizes data in real-time", MissingDeps: firebaseDeps},
+		{ID: "firebase-hosting", Name: "firebase-hosting", Label: "Firebase Hosting", Status: hostingStatus, Port: hostingPort, Description: "Local hosting of web assets and content with SSL", MissingDeps: firebaseDeps},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -200,6 +213,9 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 		"bigtable":  "bigtable.googleapis.com",
 		"datastore": "datastore.googleapis.com",
 		"spanner":   "spanner.googleapis.com",
+		"firebase-auth": "identitytoolkit.googleapis.com",
+		"firebase-rtdb": "firebaseio.com",
+		"firebase-hosting": "firebasehosting.googleapis.com",
 	}
 
 	if action == "start" {
@@ -795,6 +811,25 @@ func (api *API) handlePruneContainers(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[UI/API] Image pruning failed: %v", err)
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (api *API) handleManageFirebase() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/firebase")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		
+		// Map back to specific domains if needed, or just forward as is for project logic
+		// Most management calls will be to firebaseio.com or identitytoolkit
+		req.URL.Path = path 
+		log.Printf("[UI/API Proxy] Firebase \u2192 %s", req.URL.Path)
+	}
+	return proxy
 }
 
 func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {

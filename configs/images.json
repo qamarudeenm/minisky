@@ -36,6 +36,42 @@
       "image": "gcr.io/cloud-spanner-emulator/emulator",
       "port": "9020/tcp",
       "cmd": []
+    },
+    "identitytoolkit.googleapis.com": {
+      "name": "minisky-firebase-auth",
+      "image": "andreysenov/firebase-tools:latest",
+      "port": "9099/tcp",
+      "cmd": ["sh", "-c", "printf '{\"emulators\":{\"hub\":{\"host\":\"0.0.0.0\",\"port\":4400},\"auth\":{\"host\":\"0.0.0.0\",\"port\":9099},\"database\":{\"host\":\"0.0.0.0\",\"port\":9000},\"hosting\":{\"host\":\"0.0.0.0\",\"port\":5000},\"ui\":{\"enabled\":false}}}' > firebase.json && firebase emulators:start --only auth --project minisky-project"],
+      "volume": "",
+      "env": [
+        "FIREBASE_AUTH_EMULATOR_HOST=0.0.0.0:9099",
+        "PUBSUB_EMULATOR_HOST=172.17.0.1:8080",
+        "FIRESTORE_EMULATOR_HOST=172.17.0.1:8080",
+        "GOOGLE_CLOUD_PROJECT=minisky-project"
+      ]
+    },
+    "firebaseio.com": {
+      "name": "minisky-firebase-rtdb",
+      "image": "andreysenov/firebase-tools:latest",
+      "port": "9000/tcp",
+      "cmd": ["sh", "-c", "printf '{\"emulators\":{\"hub\":{\"host\":\"0.0.0.0\",\"port\":4400},\"auth\":{\"host\":\"0.0.0.0\",\"port\":9099},\"database\":{\"host\":\"0.0.0.0\",\"port\":9000},\"hosting\":{\"host\":\"0.0.0.0\",\"port\":5000},\"ui\":{\"enabled\":false}}}' > firebase.json && firebase emulators:start --only database --project minisky-project"],
+      "volume": "",
+      "env": [
+        "FIREBASE_DATABASE_EMULATOR_HOST=0.0.0.0:9000",
+        "FIREBASE_AUTH_EMULATOR_HOST=172.17.0.1:8080",
+        "GOOGLE_CLOUD_PROJECT=minisky-project"
+      ]
+    },
+    "firebasehosting.googleapis.com": {
+      "name": "minisky-firebase-hosting",
+      "image": "andreysenov/firebase-tools:latest",
+      "port": "5000/tcp",
+      "cmd": ["sh", "-c", "printf '{\"emulators\":{\"hub\":{\"host\":\"0.0.0.0\",\"port\":4400},\"auth\":{\"host\":\"0.0.0.0\",\"port\":9099},\"database\":{\"host\":\"0.0.0.0\",\"port\":9000},\"hosting\":{\"host\":\"0.0.0.0\",\"port\":5000},\"ui\":{\"enabled\":false}}}' > firebase.json && firebase emulators:start --only hosting --project minisky-project"],
+      "volume": "",
+      "env": [
+        "FIREBASE_HOSTING_EMULATOR_HOST=0.0.0.0:5000",
+        "GOOGLE_CLOUD_PROJECT=minisky-project"
+      ]
     }
   },
   "compute": {

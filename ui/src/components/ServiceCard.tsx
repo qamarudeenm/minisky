@@ -4,6 +4,7 @@ import DnsIcon from '@mui/icons-material/Dns';
 import MemoryIcon from '@mui/icons-material/Memory';
 import SecurityIcon from '@mui/icons-material/Security';
 import StorageIcon from '@mui/icons-material/Storage';
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import { Service } from '../hooks/useServices';
 
 type ServiceCardProps = {
@@ -36,6 +37,10 @@ export default function ServiceCard({
       case 'bigtable': return <StorageIcon sx={{ color: '#e67c73', fontSize: '1.2rem' }}/>;
       case 'datastore': return <StorageIcon sx={{ color: '#f9ab00', fontSize: '1.2rem' }}/>;
       case 'spanner': return <StorageIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
+      case 'firebase-auth':
+      case 'firebase-rtdb':
+      case 'firebase-hosting':
+        return <LocalFireDepartmentIcon sx={{ color: '#ffca28', fontSize: '1.2rem' }}/>;
       default:
         return idx % 4 === 0 ? <CloudIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/> :
                idx % 4 === 1 ? <MemoryIcon sx={{ color: '#d93025', fontSize: '1.2rem' }}/> :
@@ -92,7 +97,7 @@ export default function ServiceCard({
           )}
           
           {/* Dynamic Controls based on service ID */}
-          {['storage', 'pubsub', 'firestore', 'bigtable', 'datastore', 'spanner'].includes(s.id) && s.status === 'SLEEPING' && (
+          {['storage', 'pubsub', 'firestore', 'bigtable', 'datastore', 'spanner', 'firebase-auth', 'firebase-rtdb', 'firebase-hosting'].includes(s.id) && s.status === 'SLEEPING' && (
             <Button size="small" variant="outlined" onClick={() => onStartContainer(s.id)}>Spin Up Container</Button>
           )}
 
@@ -100,7 +105,19 @@ export default function ServiceCard({
             <Button size="small" variant="contained" color="warning" onClick={() => onInstallDependency('kind')} sx={{ fontWeight: 600 }}>Fix Missing Tool (kind)</Button>
           )}
 
-          {['storage', 'pubsub', 'firestore', 'bigtable', 'datastore', 'spanner'].includes(s.id) && s.status === 'RUNNING' && onStopContainer && (
+          {s.status === 'SLEEPING' && s.missingDeps?.some(d => d.startsWith('docker-image:')) && onInstallDependency && (
+            <Button 
+              size="small" 
+              variant="contained" 
+              color="info" 
+              onClick={() => onInstallDependency(s.missingDeps!.find(d => d.startsWith('docker-image:'))!)} 
+              sx={{ fontWeight: 600 }}
+            >
+              Pull Required Image
+            </Button>
+          )}
+
+          {['storage', 'pubsub', 'firestore', 'bigtable', 'datastore', 'spanner', 'firebase-auth', 'firebase-rtdb', 'firebase-hosting'].includes(s.id) && s.status === 'RUNNING' && onStopContainer && (
             <Button size="small" variant="outlined" color="error" onClick={() => onStopContainer(s.id)}>Stop Container</Button>
           )}
 

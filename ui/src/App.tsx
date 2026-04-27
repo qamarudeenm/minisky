@@ -9,6 +9,7 @@ import DatabaseIcon from '@mui/icons-material/Storage';
 import HubIcon from '@mui/icons-material/Hub';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import Dashboard from './components/Dashboard';
 import StoragePage from './components/StoragePage';
 import ComputePage from './components/ComputePage';
@@ -17,6 +18,7 @@ import NetworkPage from './components/NetworkPage';
 import ProjectSelector from './components/ProjectSelector';
 import LogExplorer from './components/LogExplorer';
 import MonitoringPage from './components/MonitoringPage';
+import FirebasePage from './components/FirebasePage';
 
 const DRAWER_WIDTH = 280;
 
@@ -26,6 +28,7 @@ const NAV_ITEMS = [
   { to: '/storage', label: 'Data Storage Buckets',      icon: <StorageIcon /> },
   { to: '/database',label: 'Database Topology',         icon: <DatabaseIcon /> },
   { to: '/network', label: 'Networking',                icon: <HubIcon /> },
+  { to: '/firebase',label: 'Firebase Services',         icon: <LocalFireDepartmentIcon /> },
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: React.ReactNode }) {
@@ -144,6 +147,7 @@ function NavigationContent() {
           <Route path="/network"  element={<NetworkPage />} />
           <Route path="/logging"  element={<LogExplorer />} />
           <Route path="/monitoring" element={<MonitoringPage />} />
+          <Route path="/firebase" element={<FirebasePage />} />
         </Routes>
       </Box>
     </Box>
