@@ -16,6 +16,7 @@ import BigtableManagerDrawer from './BigtableManagerDrawer';
 import GKEManagerDrawer from './GKEManagerDrawer';
 import AppEngineManagerDrawer from './AppEngineManagerDrawer';
 import MemorystoreManagerDrawer from './MemorystoreManagerDrawer';
+import SchedulerManagerDrawer from './SchedulerManagerDrawer';
 
 export default function Dashboard() {
   const { 
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const [gkeDrawerOpen, setGkeDrawerOpen] = useState(false);
   const [appEngineDrawerOpen, setAppEngineDrawerOpen] = useState(false);
   const [memorystoreDrawerOpen, setMemorystoreDrawerOpen] = useState(false);
+  const [schedulerDrawerOpen, setSchedulerDrawerOpen] = useState(false);
 
   const serverlessService = services.find(s => s.id === 'serverless');
   const isBuildpacksEnabled = settings.MINISKY_SERVERLESS_BACKEND === 'buildpacks';
@@ -83,6 +85,7 @@ export default function Dashboard() {
                 if (id === 'gke') setGkeDrawerOpen(true);
                 if (id === 'appengine') setAppEngineDrawerOpen(true);
                 if (id === 'memorystore') setMemorystoreDrawerOpen(true);
+                if (id === 'scheduler') setSchedulerDrawerOpen(true);
                 if (id === 'cloudfunctions' || id === 'serverless') setServerlessDrawerOpen(true);
               }}
               onInstallDependency={handleInstallDependency}
@@ -117,6 +120,7 @@ export default function Dashboard() {
       <GKEManagerDrawer open={gkeDrawerOpen} onClose={() => setGkeDrawerOpen(false)} />
       <AppEngineManagerDrawer open={appEngineDrawerOpen} onClose={() => setAppEngineDrawerOpen(false)} />
       <MemorystoreManagerDrawer open={memorystoreDrawerOpen} onClose={() => setMemorystoreDrawerOpen(false)} />
+      <SchedulerManagerDrawer open={schedulerDrawerOpen} onClose={() => setSchedulerDrawerOpen(false)} onCreated={() => {}} />
 
       <style>{`
         @keyframes fadeIn {

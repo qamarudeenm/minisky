@@ -11,6 +11,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import Dashboard from './components/Dashboard';
 import StoragePage from './components/StoragePage';
 import ComputePage from './components/ComputePage';
@@ -22,6 +23,7 @@ import MonitoringPage from './components/MonitoringPage';
 import FirebasePage from './components/FirebasePage';
 import AppEnginePage from './components/AppEnginePage';
 import MemorystorePage from './components/MemorystorePage';
+import SchedulerPage from './components/SchedulerPage';
 
 const DRAWER_WIDTH = 280;
 
@@ -34,6 +36,7 @@ const NAV_ITEMS = [
   { to: '/firebase',  label: 'Firebase Services',         icon: <LocalFireDepartmentIcon /> },
   { to: '/appengine', label: 'App Engine',                icon: <RocketLaunchIcon /> },
   { to: '/memorystore', label: 'Memorystore',             icon: <StorageIcon /> },
+  { to: '/scheduler',   label: 'Cloud Scheduler',         icon: <ScheduleIcon /> },
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: React.ReactNode }) {
@@ -155,6 +158,7 @@ function NavigationContent() {
           <Route path="/firebase"   element={<FirebasePage />} />
           <Route path="/appengine" element={<AppEnginePage />} />
           <Route path="/memorystore" element={<MemorystorePage />} />
+          <Route path="/scheduler" element={<SchedulerPage />} />
         </Routes>
       </Box>
     </Box>

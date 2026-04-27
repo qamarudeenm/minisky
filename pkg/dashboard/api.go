@@ -22,6 +22,7 @@ import (
 	"minisky/pkg/shims/logging"
 	"minisky/pkg/shims/memorystore"
 	"minisky/pkg/shims/monitoring"
+	"minisky/pkg/shims/scheduler"
 	"minisky/pkg/shims/serverless"
 	"minisky/pkg/version"
 
@@ -41,6 +42,7 @@ type API struct {
 	monAPI        *monitoring.API
 	appEngineAPI  *appengine.API
 	memoAPI       *memorystore.API
+	schedulerAPI  *scheduler.API
 }
 
 func NewAPIHandler(
@@ -52,6 +54,7 @@ func NewAPIHandler(
 	monAPI *monitoring.API,
 	appEngineAPI *appengine.API,
 	memoAPI *memorystore.API,
+	schedulerAPI *scheduler.API,
 ) http.Handler {
 	api := &API{
 		svcMgr:       svcMgr,
@@ -62,6 +65,7 @@ func NewAPIHandler(
 		monAPI:       monAPI,
 		appEngineAPI: appEngineAPI,
 		memoAPI:      memoAPI,
+		schedulerAPI: schedulerAPI,
 	}
 
 	mux := http.NewServeMux()
@@ -96,6 +100,7 @@ func NewAPIHandler(
 	mux.Handle("/api/manage/firebase/", api.handleManageFirebase())
 	mux.Handle("/api/manage/appengine/", api.handleManageAppEngine())
 	mux.Handle("/api/manage/memorystore/", api.handleManageMemorystore())
+	mux.Handle("/api/manage/scheduler/", api.handleManageScheduler())
 	return mux
 }
 
@@ -197,6 +202,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "firebase-hosting", Name: "firebase-hosting", Label: "Firebase Hosting", Status: hostingStatus, Port: hostingPort, Description: "Local hosting of web assets and content with SSL", MissingDeps: firebaseDeps},
 		{ID: "appengine", Name: "app-engine", Label: "App Engine", Status: "RUNNING", Port: nil, Description: "Deploy and version serverless applications with zero infrastructure management"},
 		{ID: "memorystore", Name: "cloud-memorystore", Label: "Memorystore", Status: "RUNNING", Port: nil, Description: "In-memory data store for Redis and Memcached"},
+		{ID: "scheduler", Name: "cloud-scheduler", Label: "Cloud Scheduler", Status: "RUNNING", Port: nil, Description: "Managed cron job service for triggering HTTP/PubSub endpoints"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -572,6 +578,23 @@ func (api *API) handleManageServerless() http.Handler {
 			req.URL.Path = "/v2" + path
 		}
 		log.Printf("[UI/API Proxy] Serverless \u2192 %s (Host: %s)", req.URL.Path, req.Host)
+	}
+	return proxy
+}
+
+func (api *API) handleManageScheduler() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/scheduler")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		req.URL.Path = "/v1" + path
+		req.Host = "cloudscheduler.googleapis.com"
+		log.Printf("[UI/API Proxy] Scheduler \u2192 %s", req.URL.Path)
 	}
 	return proxy
 }

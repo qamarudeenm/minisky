@@ -176,6 +176,14 @@ export default function ServiceCard({
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Datastore</Button>
           )}
 
+          {s.id === 'memorystore' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Memorystore</Button>
+          )}
+
+          {s.id === 'scheduler' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Jobs</Button>
+          )}
+
           {s.id === 'spanner' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Spanner</Button>
           )}
