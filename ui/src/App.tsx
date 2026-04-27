@@ -21,6 +21,7 @@ import LogExplorer from './components/LogExplorer';
 import MonitoringPage from './components/MonitoringPage';
 import FirebasePage from './components/FirebasePage';
 import AppEnginePage from './components/AppEnginePage';
+import MemorystorePage from './components/MemorystorePage';
 
 const DRAWER_WIDTH = 280;
 
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { to: '/network',   label: 'Networking',                icon: <HubIcon /> },
   { to: '/firebase',  label: 'Firebase Services',         icon: <LocalFireDepartmentIcon /> },
   { to: '/appengine', label: 'App Engine',                icon: <RocketLaunchIcon /> },
+  { to: '/memorystore', label: 'Memorystore',             icon: <StorageIcon /> },
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: React.ReactNode }) {
@@ -152,6 +154,7 @@ function NavigationContent() {
           <Route path="/monitoring" element={<MonitoringPage />} />
           <Route path="/firebase"   element={<FirebasePage />} />
           <Route path="/appengine" element={<AppEnginePage />} />
+          <Route path="/memorystore" element={<MemorystorePage />} />
         </Routes>
       </Box>
     </Box>

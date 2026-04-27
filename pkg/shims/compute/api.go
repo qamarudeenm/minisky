@@ -392,8 +392,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 		allowedPorts := api.getAllowedPortsForVPC(vpcName)
 
 		// Tell the Orchestrator to physically spin up the Docker container!
-		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcName, allowedPorts, []string{})
-		
+		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcName, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"})
 		api.mu.Lock()
 		if i, ok := api.instances[key]; ok {
 			if err != nil {

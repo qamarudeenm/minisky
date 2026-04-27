@@ -411,9 +411,8 @@ func (sm *ServiceManager) ImageExistsPublic(image string) (bool, error) {
 }
 
 // ProvisionComputeVM actively boots a Data Plane Docker container mimicking a GCE VM.
-// To keep it permanently running for SSH, we use `tail -f /dev/null`.
-func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcName string, ports []string, env []string) error {
-	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpc: %s ports: %d env: %d)", containerName, osImage, vpcName, len(ports), len(env))
+func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcName string, ports []string, env []string, cmd []string) error {
+	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpc: %s ports: %d env: %d cmd: %v)", containerName, osImage, vpcName, len(ports), len(env), cmd)
 	
 	exists, err := sm.ImageExistsPublic(osImage)
 	if err != nil {
@@ -446,7 +445,7 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 
 	payload := map[string]interface{}{
 		"Image":        osImage,
-		"Cmd":          []string{"tail", "-f", "/dev/null"},
+		"Cmd":          cmd,
 		"Env":          env,
 		"ExposedPorts": exposedPorts,
 		"HostConfig": map[string]interface{}{
@@ -1007,7 +1006,7 @@ func (sm *ServiceManager) ApplyFirewallPortsToVPC(vpcName string, containerNames
 	for i, cName := range containerNames {
 		osImage := osImages[i]
 		sm.DeleteComputeVM(cName)
-		sm.ProvisionComputeVM(cName, osImage, vpcName, allowedPorts, []string{})
+		sm.ProvisionComputeVM(cName, osImage, vpcName, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"})
 	}
 	return nil
 }

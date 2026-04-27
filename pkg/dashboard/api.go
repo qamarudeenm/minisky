@@ -20,6 +20,7 @@ import (
 	"minisky/pkg/shims/bigquery"
 	"minisky/pkg/shims/gke"
 	"minisky/pkg/shims/logging"
+	"minisky/pkg/shims/memorystore"
 	"minisky/pkg/shims/monitoring"
 	"minisky/pkg/shims/serverless"
 	"minisky/pkg/version"
@@ -39,6 +40,7 @@ type API struct {
 	logAPI        *logging.API
 	monAPI        *monitoring.API
 	appEngineAPI  *appengine.API
+	memoAPI       *memorystore.API
 }
 
 func NewAPIHandler(
@@ -49,6 +51,7 @@ func NewAPIHandler(
 	logAPI *logging.API,
 	monAPI *monitoring.API,
 	appEngineAPI *appengine.API,
+	memoAPI *memorystore.API,
 ) http.Handler {
 	api := &API{
 		svcMgr:       svcMgr,
@@ -58,6 +61,7 @@ func NewAPIHandler(
 		logAPI:       logAPI,
 		monAPI:       monAPI,
 		appEngineAPI: appEngineAPI,
+		memoAPI:      memoAPI,
 	}
 
 	mux := http.NewServeMux()
@@ -91,6 +95,7 @@ func NewAPIHandler(
 	mux.HandleFunc("/api/manage/monitoring/stats", api.handleMonitoringStats)
 	mux.Handle("/api/manage/firebase/", api.handleManageFirebase())
 	mux.Handle("/api/manage/appengine/", api.handleManageAppEngine())
+	mux.Handle("/api/manage/memorystore/", api.handleManageMemorystore())
 	return mux
 }
 
@@ -191,6 +196,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "firebase-rtdb", Name: "firebase-rtdb", Label: "Firebase Realtime Database", Status: rtdbStatus, Port: rtdbPort, Description: "NoSQL cloud database that synchronizes data in real-time", MissingDeps: firebaseDeps},
 		{ID: "firebase-hosting", Name: "firebase-hosting", Label: "Firebase Hosting", Status: hostingStatus, Port: hostingPort, Description: "Local hosting of web assets and content with SSL", MissingDeps: firebaseDeps},
 		{ID: "appengine", Name: "app-engine", Label: "App Engine", Status: "RUNNING", Port: nil, Description: "Deploy and version serverless applications with zero infrastructure management"},
+		{ID: "memorystore", Name: "cloud-memorystore", Label: "Memorystore", Status: "RUNNING", Port: nil, Description: "In-memory data store for Redis and Memcached"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -222,6 +228,7 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 		"firebase-auth": "identitytoolkit.googleapis.com",
 		"firebase-rtdb": "firebaseio.com",
 		"firebase-hosting": "firebasehosting.googleapis.com",
+		"memorystore": "redis.googleapis.com",
 	}
 
 	if action == "start" {
@@ -841,8 +848,8 @@ func (api *API) handleManageFirebase() http.Handler {
 func (api *API) handleManageAppEngine() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/manage/appengine")
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
+		if path == "" {
+			path = "/"
 		}
 
 		// Direct deploy: POST /api/manage/appengine/deploy
@@ -854,42 +861,34 @@ func (api *API) handleManageAppEngine() http.Handler {
 			return
 		}
 
-		// GET /api/manage/appengine/apps  — list or get app
-		// GET /api/manage/appengine/services — list services
-		// GET /api/manage/appengine/versions — list versions
-		// DELETE /api/manage/appengine/versions/{id}
-		project := r.URL.Query().Get("project")
-		if project == "" {
-			project = "local-dev-project"
-		}
-
-		var shimPath string
-		switch {
-		case strings.HasPrefix(path, "/apps"):
-			shimPath = "/v1/projects/" + project + "/apps"
-		case strings.HasPrefix(path, "/services"):
-			shimPath = "/v1/projects/" + project + "/apps/" + project + "/services"
-		case strings.HasPrefix(path, "/versions"):
-			svc := r.URL.Query().Get("service")
-			if svc == "" {
-				svc = "default"
-			}
-			vid := strings.TrimPrefix(path, "/versions")
-			shimPath = "/v1/projects/" + project + "/apps/" + project + "/services/" + svc + "/versions" + vid
-		case strings.HasPrefix(path, "/operations"):
-			op := strings.TrimPrefix(path, "/operations/")
-			shimPath = "/v1/projects/" + project + "/apps/" + project + "/operations/" + op
-		default:
-			http.NotFound(w, r)
-			return
-		}
-
-		r.URL.Path = shimPath
+		// List services, versions, etc: /api/manage/appengine/services?project=...
+		// Forward as-is to the app engine shim
+		r.URL.Path = "/v1/projects/local-dev-project/apps/local-dev-project" + path
 		r.Host = "appengine.googleapis.com"
-		log.Printf("[UI/API Proxy] App Engine → %s", shimPath)
 		api.appEngineAPI.ServeHTTP(w, r)
 	})
 }
+
+func (api *API) handleManageMemorystore() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/manage/memorystore")
+		if path == "" {
+			path = "/"
+		}
+
+		// Determine if it's Redis or Memcached based on path or query
+		host := "redis.googleapis.com"
+		if strings.Contains(path, "memcache") {
+			host = "memcache.googleapis.com"
+		}
+
+		// Map /api/manage/memorystore/instances -> /v1/projects/local-dev-project/locations/us-central1/instances
+		r.URL.Path = "/v1/projects/local-dev-project/locations/us-central1" + path
+		r.Host = host
+		api.memoAPI.ServeHTTP(w, r)
+	})
+}
+
 
 func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

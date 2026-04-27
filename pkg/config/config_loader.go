@@ -14,6 +14,7 @@ type ImageRegistry struct {
 	Sql       SqlConfig                 `json:"sql"`
 	Serverless ServerlessConfig         `json:"serverless"`
 	Dataproc   DataprocConfig           `json:"dataproc"`
+	Memorystore MemorystoreConfig       `json:"memorystore"`
 }
 
 type EmulatorConfig struct {
@@ -61,6 +62,23 @@ type DataprocConfig struct {
 	Versions     []SqlVersion `json:"versions"` // Reusing SqlVersion as it has the same fields (version, label, image)
 	DefaultImage string       `json:"default_image"`
 	MasterPorts  []string     `json:"master_ports"`
+}
+
+type MemorystoreConfig struct {
+	Redis     MemoryEngineConfig `json:"redis"`
+	Memcached MemoryEngineConfig `json:"memcached"`
+	Valkey    MemoryEngineConfig `json:"valkey"`
+}
+
+type MemoryEngineConfig struct {
+	DefaultImage string          `json:"default_image"`
+	Versions     []MemoryVersion `json:"versions"`
+}
+
+type MemoryVersion struct {
+	Version string `json:"version"`
+	Label   string `json:"label"`
+	Image   string `json:"image"`
 }
 
 var (
@@ -126,6 +144,11 @@ func fallbackRegistry() *ImageRegistry {
 		Dataproc: DataprocConfig{
 			DefaultImage: "bitnami/spark:3.5",
 			MasterPorts:  []string{"8080/tcp"},
+		},
+		Memorystore: MemorystoreConfig{
+			Redis:     MemoryEngineConfig{DefaultImage: "redis:latest"},
+			Memcached: MemoryEngineConfig{DefaultImage: "memcached:latest"},
+			Valkey:    MemoryEngineConfig{DefaultImage: "valkey/valkey:latest"},
 		},
 	}
 }

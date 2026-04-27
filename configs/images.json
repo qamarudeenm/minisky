@@ -116,5 +116,31 @@
     ],
     "default_image": "bitnami/spark:4.0",
     "master_ports": ["8080/tcp"]
+  },
+  "memorystore": {
+    "redis": {
+      "default_image": "redis:8.0-alpine",
+      "versions": [
+        { "version": "8.0", "label": "Redis 8.0 (Latest)", "image": "redis:8.0-alpine" },
+        { "version": "7.4", "label": "Redis 7.4", "image": "redis:7.4-alpine" },
+        { "version": "7.2", "label": "Redis 7.2 (LTS)", "image": "redis:7.2-alpine" }
+      ]
+    },
+    "memcached": {
+      "default_image": "memcached:1.6.33-alpine",
+      "versions": [
+        { "version": "1.6.33", "label": "Memcached 1.6.33 (Latest)", "image": "memcached:1.6.33-alpine" },
+        { "version": "1.6.32", "label": "Memcached 1.6.32", "image": "memcached:1.6.32-alpine" },
+        { "version": "1.5.22", "label": "Memcached 1.5.22 (Legacy)", "image": "memcached:1.5.22-alpine" }
+      ]
+    },
+    "valkey": {
+      "default_image": "valkey/valkey:9.0.3-alpine",
+      "versions": [
+        { "version": "9.0", "label": "Valkey 9.0 (Latest)", "image": "valkey/valkey:9.0.3-alpine" },
+        { "version": "8.1", "label": "Valkey 8.1", "image": "valkey/valkey:8.1.6-alpine" },
+        { "version": "7.2", "label": "Valkey 7.2", "image": "valkey/valkey:7.2.12-alpine" }
+      ]
+    }
   }
 }

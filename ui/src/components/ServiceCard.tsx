@@ -39,6 +39,7 @@ export default function ServiceCard({
       case 'datastore': return <StorageIcon sx={{ color: '#f9ab00', fontSize: '1.2rem' }}/>;
       case 'spanner': return <StorageIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'appengine': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
+      case 'memorystore': return <StorageIcon sx={{ color: '#c5221f', fontSize: '1.2rem' }}/>;
       case 'firebase-auth':
       case 'firebase-rtdb':
       case 'firebase-hosting':
@@ -185,6 +186,10 @@ export default function ServiceCard({
 
           {s.id === 'appengine' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage App Engine</Button>
+          )}
+
+          {s.id === 'memorystore' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Memorystore</Button>
           )}
           
           {s.id === 'serverless' && s.missingDeps?.includes('pack') && onInstallDependency && (

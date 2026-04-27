@@ -17,6 +17,7 @@ import (
 	_ "minisky/pkg/shims/gke"
 	_ "minisky/pkg/shims/iam"
 	_ "minisky/pkg/shims/logging"
+	_ "minisky/pkg/shims/memorystore"
 	_ "minisky/pkg/shims/metadata"
 	_ "minisky/pkg/shims/monitoring"
 	_ "minisky/pkg/shims/pubsub"
