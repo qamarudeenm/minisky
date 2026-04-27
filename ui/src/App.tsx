@@ -10,6 +10,7 @@ import HubIcon from '@mui/icons-material/Hub';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import Dashboard from './components/Dashboard';
 import StoragePage from './components/StoragePage';
 import ComputePage from './components/ComputePage';
@@ -19,16 +20,18 @@ import ProjectSelector from './components/ProjectSelector';
 import LogExplorer from './components/LogExplorer';
 import MonitoringPage from './components/MonitoringPage';
 import FirebasePage from './components/FirebasePage';
+import AppEnginePage from './components/AppEnginePage';
 
 const DRAWER_WIDTH = 280;
 
 const NAV_ITEMS = [
-  { to: '/',        label: 'System Diagnostics',       icon: <DashboardIcon /> },
-  { to: '/compute', label: 'Compute Engine Instances',  icon: <ComputeIcon /> },
-  { to: '/storage', label: 'Data Storage Buckets',      icon: <StorageIcon /> },
-  { to: '/database',label: 'Database Topology',         icon: <DatabaseIcon /> },
-  { to: '/network', label: 'Networking',                icon: <HubIcon /> },
-  { to: '/firebase',label: 'Firebase Services',         icon: <LocalFireDepartmentIcon /> },
+  { to: '/',           label: 'System Diagnostics',       icon: <DashboardIcon /> },
+  { to: '/compute',   label: 'Compute Engine Instances',  icon: <ComputeIcon /> },
+  { to: '/storage',   label: 'Data Storage Buckets',      icon: <StorageIcon /> },
+  { to: '/database',  label: 'Database Topology',         icon: <DatabaseIcon /> },
+  { to: '/network',   label: 'Networking',                icon: <HubIcon /> },
+  { to: '/firebase',  label: 'Firebase Services',         icon: <LocalFireDepartmentIcon /> },
+  { to: '/appengine', label: 'App Engine',                icon: <RocketLaunchIcon /> },
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: React.ReactNode }) {
@@ -147,7 +150,8 @@ function NavigationContent() {
           <Route path="/network"  element={<NetworkPage />} />
           <Route path="/logging"  element={<LogExplorer />} />
           <Route path="/monitoring" element={<MonitoringPage />} />
-          <Route path="/firebase" element={<FirebasePage />} />
+          <Route path="/firebase"   element={<FirebasePage />} />
+          <Route path="/appengine" element={<AppEnginePage />} />
         </Routes>
       </Box>
     </Box>

@@ -247,6 +247,12 @@ func (api *API) StartHarvester(sm *orchestrator.ServiceManager) {
 					} else if strings.HasPrefix(resourceName, "sql-") {
 						resourceType = "cloudsql_instance"
 						resourceName = strings.TrimPrefix(resourceName, "sql-")
+					} else if strings.HasPrefix(resourceName, "firebase-") {
+						resourceType = "firebase_service"
+						resourceName = strings.TrimPrefix(resourceName, "firebase-")
+					} else if strings.HasPrefix(resourceName, "appengine-") {
+						resourceType = "gae_app"
+						resourceName = strings.TrimPrefix(resourceName, "appengine-")
 					}
 
 					api.mu.Lock()

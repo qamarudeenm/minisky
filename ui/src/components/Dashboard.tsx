@@ -14,6 +14,7 @@ import ServerlessManagerDrawer from './ServerlessManagerDrawer';
 import BigQueryManagerDrawer from './BigQueryManagerDrawer';
 import BigtableManagerDrawer from './BigtableManagerDrawer';
 import GKEManagerDrawer from './GKEManagerDrawer';
+import AppEngineManagerDrawer from './AppEngineManagerDrawer';
 
 export default function Dashboard() {
   const { 
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const [bigQueryDrawerOpen, setBigQueryDrawerOpen] = useState(false);
   const [bigtableDrawerOpen, setBigtableDrawerOpen] = useState(false);
   const [gkeDrawerOpen, setGkeDrawerOpen] = useState(false);
+  const [appEngineDrawerOpen, setAppEngineDrawerOpen] = useState(false);
 
   const serverlessService = services.find(s => s.id === 'serverless');
   const isBuildpacksEnabled = settings.MINISKY_SERVERLESS_BACKEND === 'buildpacks';
@@ -77,6 +79,7 @@ export default function Dashboard() {
                 if (id === 'bigquery') setBigQueryDrawerOpen(true);
                 if (id === 'bigtable') setBigtableDrawerOpen(true);
                 if (id === 'gke') setGkeDrawerOpen(true);
+                if (id === 'appengine') setAppEngineDrawerOpen(true);
                 if (id === 'cloudfunctions' || id === 'serverless') setServerlessDrawerOpen(true);
               }}
               onInstallDependency={handleInstallDependency}
@@ -109,6 +112,7 @@ export default function Dashboard() {
       <BigQueryManagerDrawer open={bigQueryDrawerOpen} onClose={() => setBigQueryDrawerOpen(false)} />
       <BigtableManagerDrawer open={bigtableDrawerOpen} onClose={() => setBigtableDrawerOpen(false)} />
       <GKEManagerDrawer open={gkeDrawerOpen} onClose={() => setGkeDrawerOpen(false)} />
+      <AppEngineManagerDrawer open={appEngineDrawerOpen} onClose={() => setAppEngineDrawerOpen(false)} />
 
       <style>{`
         @keyframes fadeIn {

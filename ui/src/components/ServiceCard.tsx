@@ -5,6 +5,7 @@ import MemoryIcon from '@mui/icons-material/Memory';
 import SecurityIcon from '@mui/icons-material/Security';
 import StorageIcon from '@mui/icons-material/Storage';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { Service } from '../hooks/useServices';
 
 type ServiceCardProps = {
@@ -37,6 +38,7 @@ export default function ServiceCard({
       case 'bigtable': return <StorageIcon sx={{ color: '#e67c73', fontSize: '1.2rem' }}/>;
       case 'datastore': return <StorageIcon sx={{ color: '#f9ab00', fontSize: '1.2rem' }}/>;
       case 'spanner': return <StorageIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
+      case 'appengine': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'firebase-auth':
       case 'firebase-rtdb':
       case 'firebase-hosting':
@@ -179,6 +181,10 @@ export default function ServiceCard({
 
           {s.id === 'gke' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Clusters</Button>
+          )}
+
+          {s.id === 'appengine' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage App Engine</Button>
           )}
           
           {s.id === 'serverless' && s.missingDeps?.includes('pack') && onInstallDependency && (

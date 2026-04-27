@@ -4,6 +4,7 @@ import (
 	"minisky/pkg/registry"
 	
 	// Blank imports to trigger init() in all shim packages
+	_ "minisky/pkg/shims/appengine"
 	_ "minisky/pkg/shims/bigquery"
 	_ "minisky/pkg/shims/bigtable"
 	_ "minisky/pkg/shims/cloudsql"

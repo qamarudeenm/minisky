@@ -16,6 +16,7 @@ import (
 
 	"minisky/pkg/config"
 	"minisky/pkg/orchestrator"
+	"minisky/pkg/shims/appengine"
 	"minisky/pkg/shims/bigquery"
 	"minisky/pkg/shims/gke"
 	"minisky/pkg/shims/logging"
@@ -31,12 +32,13 @@ var upgrader = websocket.Upgrader{
 }
 
 type API struct {
-	svcMgr      *orchestrator.ServiceManager
-	bqBackend   *bigquery.DuckDBBackend
-	gkeBackend  *gke.KindBackend
-	servBackend *serverless.BuildpacksBackend
-	logAPI      *logging.API
-	monAPI      *monitoring.API
+	svcMgr        *orchestrator.ServiceManager
+	bqBackend     *bigquery.DuckDBBackend
+	gkeBackend    *gke.KindBackend
+	servBackend   *serverless.BuildpacksBackend
+	logAPI        *logging.API
+	monAPI        *monitoring.API
+	appEngineAPI  *appengine.API
 }
 
 func NewAPIHandler(
@@ -46,14 +48,16 @@ func NewAPIHandler(
 	servBackend *serverless.BuildpacksBackend,
 	logAPI *logging.API,
 	monAPI *monitoring.API,
+	appEngineAPI *appengine.API,
 ) http.Handler {
 	api := &API{
-		svcMgr:      svcMgr,
-		bqBackend:   bqBackend,
-		gkeBackend:  gkeBackend,
-		servBackend: servBackend,
-		logAPI:      logAPI,
-		monAPI:      monAPI,
+		svcMgr:       svcMgr,
+		bqBackend:    bqBackend,
+		gkeBackend:   gkeBackend,
+		servBackend:  servBackend,
+		logAPI:       logAPI,
+		monAPI:       monAPI,
+		appEngineAPI: appEngineAPI,
 	}
 
 	mux := http.NewServeMux()
@@ -86,6 +90,7 @@ func NewAPIHandler(
 	mux.HandleFunc("/api/manage/logging/container", api.handleContainerLogs)
 	mux.HandleFunc("/api/manage/monitoring/stats", api.handleMonitoringStats)
 	mux.Handle("/api/manage/firebase/", api.handleManageFirebase())
+	mux.Handle("/api/manage/appengine/", api.handleManageAppEngine())
 	return mux
 }
 
@@ -185,6 +190,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "firebase-auth", Name: "firebase-auth", Label: "Firebase Authentication", Status: authStatus, Port: authPort, Description: "Local identity toolkit for user management and auth tokens", MissingDeps: firebaseDeps},
 		{ID: "firebase-rtdb", Name: "firebase-rtdb", Label: "Firebase Realtime Database", Status: rtdbStatus, Port: rtdbPort, Description: "NoSQL cloud database that synchronizes data in real-time", MissingDeps: firebaseDeps},
 		{ID: "firebase-hosting", Name: "firebase-hosting", Label: "Firebase Hosting", Status: hostingStatus, Port: hostingPort, Description: "Local hosting of web assets and content with SSL", MissingDeps: firebaseDeps},
+		{ID: "appengine", Name: "app-engine", Label: "App Engine", Status: "RUNNING", Port: nil, Description: "Deploy and version serverless applications with zero infrastructure management"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -826,10 +832,63 @@ func (api *API) handleManageFirebase() http.Handler {
 		
 		// Map back to specific domains if needed, or just forward as is for project logic
 		// Most management calls will be to firebaseio.com or identitytoolkit
-		req.URL.Path = path 
-		log.Printf("[UI/API Proxy] Firebase \u2192 %s", req.URL.Path)
+		req.URL.Path = path
+		log.Printf("[UI/API Proxy] Firebase → %s", req.URL.Path)
 	}
 	return proxy
+}
+
+func (api *API) handleManageAppEngine() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/manage/appengine")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+
+		// Direct deploy: POST /api/manage/appengine/deploy
+		if r.Method == http.MethodPost && path == "/deploy" {
+			// Forward to the appengine shim's direct deploy endpoint
+			r.URL.Path = "/v1/projects/local-dev-project/apps/local-dev-project/deploy"
+			r.Host = "appengine.googleapis.com"
+			api.appEngineAPI.ServeHTTP(w, r)
+			return
+		}
+
+		// GET /api/manage/appengine/apps  — list or get app
+		// GET /api/manage/appengine/services — list services
+		// GET /api/manage/appengine/versions — list versions
+		// DELETE /api/manage/appengine/versions/{id}
+		project := r.URL.Query().Get("project")
+		if project == "" {
+			project = "local-dev-project"
+		}
+
+		var shimPath string
+		switch {
+		case strings.HasPrefix(path, "/apps"):
+			shimPath = "/v1/projects/" + project + "/apps"
+		case strings.HasPrefix(path, "/services"):
+			shimPath = "/v1/projects/" + project + "/apps/" + project + "/services"
+		case strings.HasPrefix(path, "/versions"):
+			svc := r.URL.Query().Get("service")
+			if svc == "" {
+				svc = "default"
+			}
+			vid := strings.TrimPrefix(path, "/versions")
+			shimPath = "/v1/projects/" + project + "/apps/" + project + "/services/" + svc + "/versions" + vid
+		case strings.HasPrefix(path, "/operations"):
+			op := strings.TrimPrefix(path, "/operations/")
+			shimPath = "/v1/projects/" + project + "/apps/" + project + "/operations/" + op
+		default:
+			http.NotFound(w, r)
+			return
+		}
+
+		r.URL.Path = shimPath
+		r.Host = "appengine.googleapis.com"
+		log.Printf("[UI/API Proxy] App Engine → %s", shimPath)
+		api.appEngineAPI.ServeHTTP(w, r)
+	})
 }
 
 func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
