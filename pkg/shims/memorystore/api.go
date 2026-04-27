@@ -55,8 +55,9 @@ type API struct {
 	opMgr    *orchestrator.OperationManager
 	svcMgr   *orchestrator.ServiceManager
 	logAPI   *logging.API
-	redisInstances map[string]*Instance
-	memcacheInstances map[string]*Instance
+	// map[projectId]map[instanceId]*Instance
+	redisInstances map[string]map[string]*Instance
+	memcacheInstances map[string]map[string]*Instance
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManager, logAPI *logging.API) *API {
@@ -64,16 +65,16 @@ func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManage
 		opMgr:             opMgr,
 		svcMgr:            sm,
 		logAPI:            logAPI,
-		redisInstances:    make(map[string]*Instance),
-		memcacheInstances: make(map[string]*Instance),
+		redisInstances:    make(map[string]map[string]*Instance),
+		memcacheInstances: make(map[string]map[string]*Instance),
 	}
 }
 
-func (api *API) pushLog(severity, service, text string) {
+func (api *API) pushLog(projectId, severity, service, text string) {
 	if api.logAPI == nil {
 		return
 	}
-	api.logAPI.PushLog(severity, "memorystore_instance", service, text)
+	api.logAPI.PushLog(projectId, severity, "memorystore_instance", service, text)
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -109,17 +110,20 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) handleListInstances(w http.ResponseWriter, r *http.Request, isRedis bool) {
+	project := extractProject(r.URL.Path)
 	api.mu.RLock()
 	defer api.mu.RUnlock()
 
 	var instances []*Instance
-	source := api.redisInstances
+	sourceMap := api.redisInstances
 	if !isRedis {
-		source = api.memcacheInstances
+		sourceMap = api.memcacheInstances
 	}
 
-	for _, inst := range source {
-		instances = append(instances, inst)
+	if projMap, ok := sourceMap[project]; ok {
+		for _, inst := range projMap {
+			instances = append(instances, inst)
+		}
 	}
 
 	res := map[string]interface{}{
@@ -129,6 +133,7 @@ func (api *API) handleListInstances(w http.ResponseWriter, r *http.Request, isRe
 }
 
 func (api *API) handleGetInstance(w http.ResponseWriter, r *http.Request, isRedis bool) {
+	project := extractProject(r.URL.Path)
 	instanceId := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 	
 	api.mu.RLock()
@@ -136,10 +141,13 @@ func (api *API) handleGetInstance(w http.ResponseWriter, r *http.Request, isRedi
 
 	var inst *Instance
 	var ok bool
-	if isRedis {
-		inst, ok = api.redisInstances[instanceId]
-	} else {
-		inst, ok = api.memcacheInstances[instanceId]
+	sourceMap := api.redisInstances
+	if !isRedis {
+		sourceMap = api.memcacheInstances
+	}
+
+	if projMap, ok2 := sourceMap[project]; ok2 {
+		inst, ok = projMap[instanceId]
 	}
 
 	if !ok {
@@ -183,16 +191,20 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 		req.Instance.Port = 11211
 	}
 
+	project := extractProject(r.URL.Path)
 	api.mu.Lock()
-	if isRedis {
-		api.redisInstances[id] = &req.Instance
-	} else {
-		api.memcacheInstances[id] = &req.Instance
+	sourceMap := api.redisInstances
+	if !isRedis {
+		sourceMap = api.memcacheInstances
 	}
+	if sourceMap[project] == nil {
+		sourceMap[project] = make(map[string]*Instance)
+	}
+	sourceMap[project][id] = &req.Instance
 	api.mu.Unlock()
 
 	op := api.opMgr.Register("memorystore#operation", "CREATE", req.Instance.Name, "", "us-central1")
-	api.pushLog("INFO", id, fmt.Sprintf("Creating Memorystore instance %s (Tier: %s)", id, req.Instance.Tier))
+	api.pushLog(project, "INFO", id, fmt.Sprintf("Creating Memorystore instance %s (Tier: %s)", id, req.Instance.Tier))
 
 	api.opMgr.RunAsync(op.Name, func() error {
 		reg := config.GetImageRegistry()
@@ -227,10 +239,10 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 		api.mu.Lock()
 		if err != nil {
 			req.Instance.State = "REPAIRING"
-			api.pushLog("ERROR", id, fmt.Sprintf("Failed to provision container: %v", err))
+			api.pushLog(project, "ERROR", id, fmt.Sprintf("Failed to provision container: %v", err))
 		} else {
 			req.Instance.State = "READY"
-			api.pushLog("INFO", id, fmt.Sprintf("Instance %s is now READY", id))
+			api.pushLog(project, "INFO", id, fmt.Sprintf("Instance %s is now READY", id))
 		}
 		api.mu.Unlock()
 		return err
@@ -241,16 +253,21 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 }
 
 func (api *API) handleDeleteInstance(w http.ResponseWriter, r *http.Request, isRedis bool) {
+	project := extractProject(r.URL.Path)
 	id := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 
 	api.mu.Lock()
 	var inst *Instance
 	var ok bool
-	if isRedis {
-		inst, ok = api.redisInstances[id]
-	} else {
-		inst, ok = api.memcacheInstances[id]
+	sourceMap := api.redisInstances
+	if !isRedis {
+		sourceMap = api.memcacheInstances
 	}
+
+	if projMap, ok2 := sourceMap[project]; ok2 {
+		inst, ok = projMap[id]
+	}
+
 	if ok {
 		inst.State = "DELETING"
 	}
@@ -262,7 +279,7 @@ func (api *API) handleDeleteInstance(w http.ResponseWriter, r *http.Request, isR
 	}
 
 	op := api.opMgr.Register("memorystore#operation", "DELETE", inst.Name, "", "us-central1")
-	api.pushLog("INFO", id, fmt.Sprintf("Deleting Memorystore instance %s", id))
+	api.pushLog(project, "INFO", id, fmt.Sprintf("Deleting Memorystore instance %s", id))
 
 	api.opMgr.RunAsync(op.Name, func() error {
 		containerPrefix := "redis"
@@ -273,10 +290,12 @@ func (api *API) handleDeleteInstance(w http.ResponseWriter, r *http.Request, isR
 		api.svcMgr.DeleteComputeVM(containerName)
 		
 		api.mu.Lock()
-		if isRedis {
-			delete(api.redisInstances, id)
-		} else {
-			delete(api.memcacheInstances, id)
+		sourceMap := api.redisInstances
+		if !isRedis {
+			sourceMap = api.memcacheInstances
+		}
+		if projMap, ok := sourceMap[project]; ok {
+			delete(projMap, id)
 		}
 		api.mu.Unlock()
 		return nil
@@ -284,4 +303,15 @@ func (api *API) handleDeleteInstance(w http.ResponseWriter, r *http.Request, isR
 
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(op)
+}
+
+func extractProject(path string) string {
+	// projects/{project}/locations/...
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if p == "projects" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "default"
 }

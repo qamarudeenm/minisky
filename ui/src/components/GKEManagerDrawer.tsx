@@ -6,6 +6,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import HubIcon from '@mui/icons-material/Hub';
 import StorageIcon from '@mui/icons-material/Storage';
 import DownloadIcon from '@mui/icons-material/Download';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 type Props = {
   open: boolean;
@@ -18,6 +19,7 @@ type GkeCluster = {
 };
 
 export default function GKEManagerDrawer({ open, onClose }: Props) {
+  const { activeProject } = useProjectContext();
   const [clusters, setClusters] = useState<GkeCluster[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export default function GKEManagerDrawer({ open, onClose }: Props) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/manage/gke/clusters');
+      const res = await fetch(`/api/manage/gke/projects/${activeProject}/clusters`);
       if (res.ok) {
         const data = await res.json();
         setClusters(data || []);
@@ -47,7 +49,7 @@ export default function GKEManagerDrawer({ open, onClose }: Props) {
     if (!newClusterName) return;
     setProvisioning(true);
     try {
-      const res = await fetch('/api/manage/gke/clusters', {
+      const res = await fetch(`/api/manage/gke/projects/${activeProject}/clusters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newClusterName })
@@ -68,7 +70,7 @@ export default function GKEManagerDrawer({ open, onClose }: Props) {
   };
 
   const handleDownloadConfig = async (name: string) => {
-    const res = await fetch(`/api/manage/gke/clusters/${name}/config`);
+    const res = await fetch(`/api/manage/gke/projects/${activeProject}/clusters/${name}/config`);
     if (res.ok) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -86,7 +88,7 @@ export default function GKEManagerDrawer({ open, onClose }: Props) {
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/manage/gke/clusters/${name}`, { method: 'DELETE' });
+      const res = await fetch(`/api/manage/gke/projects/${activeProject}/clusters/${name}`, { method: 'DELETE' });
       if (res.ok) {
         fetchClusters();
       } else {

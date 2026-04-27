@@ -12,6 +12,7 @@ interface Props {
 }
 
 export default function SchedulerManagerDrawer({ open, onClose, onCreated }: Props) {
+  const { activeProject } = useProjectContext();
   const [activeTab, setActiveTab] = useState(0);
   const [form, setForm] = useState({
     id: '',
@@ -19,17 +20,16 @@ export default function SchedulerManagerDrawer({ open, onClose, onCreated }: Pro
     schedule: '* * * * *',
     timeZone: 'UTC',
     // HTTP Target
-    httpUri: 'http://localhost:8080/v1/projects/local-dev-project/topics/test-topic:publish',
+    httpUri: `http://localhost:8080/v1/projects/${activeProject}/topics/test-topic:publish`,
     httpMethod: 'POST',
     httpBody: '{"messages":[{"data":"SGVsbG8gV29ybGQ="}]}',
     // PubSub Target
-    pubsubTopic: 'projects/local-dev-project/topics/test-topic',
+    pubsubTopic: `projects/${activeProject}/topics/test-topic`,
     pubsubData: 'SGVsbG8gU2NoZWR1bGVy',
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const project = 'local-dev-project';
   const location = 'us-central1';
 
   const handleSubmit = async () => {
@@ -57,7 +57,7 @@ export default function SchedulerManagerDrawer({ open, onClose, onCreated }: Pro
     }
 
     try {
-      const res = await fetch(`/api/manage/scheduler/projects/${project}/locations/${location}/jobs`, {
+      const res = await fetch(`/api/manage/scheduler/projects/${activeProject}/locations/${location}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(job),

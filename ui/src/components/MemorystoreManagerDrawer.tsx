@@ -14,6 +14,8 @@ import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
+import { useProjectContext } from '../contexts/ProjectContext';
+
 type Props = { open: boolean; onClose: () => void };
 
 type Instance = {
@@ -62,6 +64,7 @@ function StateChip({ state }: { state: string }) {
 }
 
 export default function MemorystoreManagerDrawer({ open, onClose }: Props) {
+  const { activeProject } = useProjectContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,12 +77,11 @@ export default function MemorystoreManagerDrawer({ open, onClose }: Props) {
     engineVersion: 'REDIS_8_0',
   });
 
-  const project = 'local-dev-project';
-
   const fetchInstances = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/manage/memorystore/instances?project=${project}`);
+      // GCP Redis API usually scopes instances under locations, but for the shim we use a simple project filter
+      const res = await fetch(`/api/manage/memorystore/projects/${activeProject}/locations/-/instances`);
       if (res.ok) {
         const data = await res.json();
         setInstances(data.instances || []);
@@ -97,24 +99,23 @@ export default function MemorystoreManagerDrawer({ open, onClose }: Props) {
       const t = setInterval(() => fetchInstances(true), 5000);
       return () => clearInterval(t);
     }
-  }, [open]);
+  }, [open, activeProject]);
 
   const handleCreate = async () => {
     setCreateOpen(false);
     setLoading(true);
     try {
       const isRedis = form.engineVersion.startsWith('REDIS') || form.engineVersion.startsWith('VALKEY');
-      const endpoint = isRedis ? '/api/manage/memorystore/instances' : '/api/manage/memorystore/memcache/instances';
+      const base = isRedis ? 'redis.googleapis.com' : 'memcache.googleapis.com';
+      const endpoint = `/api/manage/memorystore/projects/${activeProject}/locations/us-central1/instances`;
       
       const res = await fetch(endpoint + `?instanceId=${form.id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Host': base },
         body: JSON.stringify({
-          instance: {
-            tier: form.tier,
-            memorySizeGb: form.memorySizeGb,
-            engineVersion: form.engineVersion,
-          }
+          tier: form.tier,
+          memorySizeGb: form.memorySizeGb,
+          engineVersion: form.engineVersion,
         }),
       });
       if (res.ok) fetchInstances();
@@ -131,10 +132,7 @@ export default function MemorystoreManagerDrawer({ open, onClose }: Props) {
     if (!confirm(`Delete instance "${id}"?`)) return;
     setLoading(true);
     try {
-      const isRedis = instanceName.includes('redis') || !instanceName.includes('memcache');
-      const base = isRedis ? '/api/manage/memorystore/instances' : '/api/manage/memorystore/memcache/instances';
-      
-      const res = await fetch(`${base}/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/manage/memorystore/${instanceName}`, { method: 'DELETE' });
       if (res.ok) fetchInstances();
       else setError('Delete failed');
     } catch {

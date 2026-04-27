@@ -89,13 +89,13 @@ export default function AppEngineManagerDrawer({ open, onClose }: Props) {
     }
   }, [form.runtime]);
 
-  const project = 'local-dev-project';
+  const { activeProject } = useProjectContext();
 
   const fetchServices = async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/manage/appengine/services?project=${project}`);
+      const res = await fetch(`/api/manage/appengine/projects/${activeProject}/services`);
       if (res.ok) {
         const data = await res.json();
         setServices(data.services || []);
@@ -110,7 +110,7 @@ export default function AppEngineManagerDrawer({ open, onClose }: Props) {
   const fetchVersions = async (svc = selectedService, silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/manage/appengine/versions?project=${project}&service=${svc}`);
+      const res = await fetch(`/api/manage/appengine/projects/${activeProject}/services/${svc}/versions`);
       if (res.ok) {
         const data = await res.json();
         setVersions(data.versions || []);
@@ -126,7 +126,7 @@ export default function AppEngineManagerDrawer({ open, onClose }: Props) {
     setOpPoll(opName);
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/manage/appengine/operations/${opName}?project=${project}`);
+        const res = await fetch(`/api/manage/appengine/projects/${activeProject}/operations/${opName}`);
         if (res.ok) {
           const op = await res.json();
           if (op.done) {
@@ -155,11 +155,11 @@ export default function AppEngineManagerDrawer({ open, onClose }: Props) {
     setDeployOpen(false);
     setLoading(true);
     try {
-      const res = await fetch('/api/manage/appengine/deploy', {
+      const res = await fetch(`/api/manage/appengine/projects/${activeProject}/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          project,
+          project: activeProject,
           service: form.service || 'default',
           version: form.version || undefined,
           runtime: form.runtime,
@@ -188,7 +188,7 @@ export default function AppEngineManagerDrawer({ open, onClose }: Props) {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/manage/appengine/versions/${versionId}?project=${project}&service=${selectedService}`,
+        `/api/manage/appengine/projects/${activeProject}/services/${selectedService}/versions/${versionId}`,
         { method: 'DELETE' }
       );
       if (res.ok) fetchVersions();
@@ -214,9 +214,7 @@ export default function AppEngineManagerDrawer({ open, onClose }: Props) {
               <Typography variant="h5" sx={{ fontWeight: 500, lineHeight: 1.2 }}>
                 App Engine
               </Typography>
-              <Typography variant="caption" sx={{ color: '#5f6368' }}>
-                {project}.appspot.com
-              </Typography>
+                {activeProject}.appspot.com
             </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

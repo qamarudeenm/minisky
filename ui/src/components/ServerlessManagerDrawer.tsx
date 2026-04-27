@@ -15,6 +15,7 @@ import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import BuildIcon from '@mui/icons-material/Build';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 type Props = {
   open: boolean;
@@ -37,6 +38,7 @@ type SlsResource = {
 export default function ServerlessManagerDrawer({ 
   open, onClose, isBuildpacksEnabled, onEnableBuildpacks, missingPack, onInstallPack 
 }: Props) {
+  const { activeProject } = useProjectContext();
   const navigate = useNavigate();
   const [tab, setTab] = useState(0);
   const [functions, setFunctions] = useState<SlsResource[]>([]);
@@ -89,8 +91,8 @@ export default function ServerlessManagerDrawer({
     setError(null);
     try {
       const [fRes, sRes] = await Promise.all([
-        fetch('/api/manage/serverless/functions'),
-        fetch('/api/manage/serverless/services')
+        fetch(`/api/manage/serverless/projects/${activeProject}/functions`),
+        fetch(`/api/manage/serverless/projects/${activeProject}/services`)
       ]);
       
       if (fRes.ok) {
@@ -114,7 +116,7 @@ export default function ServerlessManagerDrawer({
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/manage/serverless/${type}/${resourceName}`, { method: 'DELETE' });
+      const res = await fetch(`/api/manage/serverless/projects/${activeProject}/${type}/${resourceName}`, { method: 'DELETE' });
       if (res.ok) {
         fetchResources();
       } else {
@@ -159,7 +161,7 @@ export default function ServerlessManagerDrawer({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...deployForm,
-          project: 'local-dev-project',
+          project: activeProject,
           location: 'us-central1',
           eventTrigger: deployForm.useEventTrigger ? {
             eventType: 'google.storage.object.finalize',
@@ -188,7 +190,7 @@ export default function ServerlessManagerDrawer({
   }; 
   const fetchLogs = async (name: string) => { 
     try { 
-      const res = await fetch(`/api/manage/serverless/logs/${name}`); 
+      const res = await fetch(`/api/manage/serverless/projects/${activeProject}/logs/${name}`); 
       if (res.ok) { 
         setLogContent(await res.text()); 
       } 

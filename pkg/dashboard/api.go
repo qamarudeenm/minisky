@@ -875,19 +875,18 @@ func (api *API) handleManageAppEngine() http.Handler {
 			path = "/"
 		}
 
-		// Direct deploy: POST /api/manage/appengine/deploy
-		if r.Method == http.MethodPost && path == "/deploy" {
-			// Forward to the appengine shim's direct deploy endpoint
-			r.URL.Path = "/v1/projects/local-dev-project/apps/local-dev-project/deploy"
-			r.Host = "appengine.googleapis.com"
-			api.appEngineAPI.ServeHTTP(w, r)
-			return
+		project := "default-project"
+		if strings.Contains(path, "/projects/") {
+			project = extractSegmentAfter(path, "projects")
+			path = strings.Replace(path, "/projects/"+project, "", 1)
 		}
 
-		// List services, versions, etc: /api/manage/appengine/services?project=...
-		// Forward as-is to the app engine shim
-		r.URL.Path = "/v1/projects/local-dev-project/apps/local-dev-project" + path
 		r.Host = "appengine.googleapis.com"
+		if strings.HasPrefix(path, "/deploy") {
+			r.URL.Path = fmt.Sprintf("/v1/projects/%s/apps/%s/deploy", project, project)
+		} else {
+			r.URL.Path = fmt.Sprintf("/v1/projects/%s/apps/%s%s", project, project, path)
+		}
 		api.appEngineAPI.ServeHTTP(w, r)
 	})
 }
@@ -899,14 +898,22 @@ func (api *API) handleManageMemorystore() http.Handler {
 			path = "/"
 		}
 
-		// Determine if it's Redis or Memcached based on path or query
+		project := "default-project"
+		if strings.Contains(path, "/projects/") {
+			project = extractSegmentAfter(path, "projects")
+			path = strings.Replace(path, "/projects/"+project, "", 1)
+		}
+
 		host := "redis.googleapis.com"
 		if strings.Contains(path, "memcache") {
 			host = "memcache.googleapis.com"
 		}
 
-		// Map /api/manage/memorystore/instances -> /v1/projects/local-dev-project/locations/us-central1/instances
-		r.URL.Path = "/v1/projects/local-dev-project/locations/us-central1" + path
+		if strings.HasPrefix(path, "/locations") {
+			r.URL.Path = "/v1/projects/" + project + path
+		} else {
+			r.URL.Path = "/v1/projects/" + project + "/locations/us-central1" + path
+		}
 		r.Host = host
 		api.memoAPI.ServeHTTP(w, r)
 	})
@@ -925,4 +932,14 @@ func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(info)
+}
+
+func extractSegmentAfter(path, keyword string) string {
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if p == keyword && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }

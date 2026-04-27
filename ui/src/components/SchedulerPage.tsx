@@ -11,6 +11,8 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import SchedulerManagerDrawer from './SchedulerManagerDrawer';
 
+import { useProjectContext } from '../contexts/ProjectContext';
+
 interface Job {
   name: string;
   schedule: string;
@@ -23,16 +25,16 @@ interface Job {
 }
 
 export default function SchedulerPage() {
+  const { activeProject } = useProjectContext();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const project = 'local-dev-project';
   const location = 'us-central1';
 
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/manage/scheduler/projects/${project}/locations/${location}/jobs`);
+      const res = await fetch(`/api/manage/scheduler/projects/${activeProject}/locations/${location}/jobs`);
       const data = await res.json();
       setJobs(data.jobs || []);
     } catch (err) {
@@ -44,7 +46,7 @@ export default function SchedulerPage() {
 
   useEffect(() => {
     fetchJobs();
-  }, []);
+  }, [activeProject]);
 
   const handleRunNow = async (jobName: string) => {
     try {

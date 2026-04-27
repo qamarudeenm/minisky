@@ -137,16 +137,20 @@ func (api *API) handleInternalLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // PushLog is a helper for internal shims to log directly
-func (api *API) PushLog(severity, resourceType, resourceName, text string) {
+func (api *API) PushLog(projectId, severity, resourceType, resourceName, text string) {
 	api.mu.Lock()
 	defer api.mu.Unlock()
+
+	if projectId == "" {
+		projectId = "default-project"
+	}
 
 	entry := LogEntry{
 		InsertId:  fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp: time.Now().Format(time.RFC3339),
 		Severity:  severity,
 		TextPayload: text,
-		LogName:   fmt.Sprintf("projects/local-dev-project/logs/%s", resourceType),
+		LogName:   fmt.Sprintf("projects/%s/logs/%s", projectId, resourceType),
 		Resource: &MonitoredResource{
 			Type: resourceType,
 			Labels: map[string]string{
@@ -255,13 +259,18 @@ func (api *API) StartHarvester(sm *orchestrator.ServiceManager) {
 						resourceName = strings.TrimPrefix(resourceName, "appengine-")
 					}
 
+					project := "default-project"
+					// If the container name contains a project hint, use it
+					// e.g. minisky-serverless-my-proj-my-fn
+					// For now we just use default-project as a safe fallback for harvesters
+					
 					api.mu.Lock()
 					entry := LogEntry{
 						InsertId:    fmt.Sprintf("%d", time.Now().UnixNano()),
 						Timestamp:   ts,
 						Severity:    severity,
 						TextPayload: msg,
-						LogName:     fmt.Sprintf("projects/local-dev-project/logs/%s", resourceType),
+						LogName:     fmt.Sprintf("projects/%s/logs/%s", project, resourceType),
 						Resource: &MonitoredResource{
 							Type: resourceType,
 							Labels: map[string]string{

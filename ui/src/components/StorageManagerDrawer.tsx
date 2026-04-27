@@ -8,6 +8,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { useState, useEffect } from 'react';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 type StorageManagerDrawerProps = {
   open: boolean;
@@ -15,22 +16,28 @@ type StorageManagerDrawerProps = {
 };
 
 export default function StorageManagerDrawer({ open, onClose }: StorageManagerDrawerProps) {
+  const { activeProject } = useProjectContext();
   const [buckets, setBuckets] = useState<any[]>([]);
   const [newBucketName, setNewBucketName] = useState('');
   
   const [currentBucket, setCurrentBucket] = useState<string | null>(null);
   const [objects, setObjects] = useState<any[]>([]);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const loadBuckets = async () => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/manage/storage/b');
+      const res = await fetch(`/api/manage/storage/projects/${activeProject}/b`);
       if (res.ok) {
         const data = await res.json();
         setBuckets(data.items || []);
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -51,7 +58,7 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
       loadBuckets();
       setCurrentBucket(null);
     }
-  }, [open]);
+  }, [open, activeProject]);
 
   useEffect(() => {
     if (currentBucket) {
@@ -61,7 +68,7 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
 
   const handleCreateBucket = async () => {
     if (!newBucketName) return;
-    await fetch('/api/manage/storage/b', {
+    await fetch(`/api/manage/storage/projects/${activeProject}/b`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newBucketName })
@@ -71,6 +78,7 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
   };
 
   const handleDeleteBucket = async (name: string) => {
+    if (!confirm(`Delete bucket "${name}" and all contents?`)) return;
     await fetch(`/api/manage/storage/b/${name}`, { method: 'DELETE' });
     loadBuckets();
   };

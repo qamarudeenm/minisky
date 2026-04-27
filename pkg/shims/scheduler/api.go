@@ -94,11 +94,11 @@ func NewAPI(logAPI *logging.API) *API {
 	return api
 }
 
-func (api *API) pushLog(severity, jobId, text string) {
+func (api *API) pushLog(projectId, severity, jobId, text string) {
 	if api.logAPI == nil {
 		return
 	}
-	api.logAPI.PushLog(severity, "cloud_scheduler_job", jobId, text)
+	api.logAPI.PushLog(projectId, severity, "cloud_scheduler_job", jobId, text)
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +168,8 @@ func (api *API) createJob(w http.ResponseWriter, r *http.Request, path string) {
 	api.scheduleJobLocked(&job)
 	api.mu.Unlock()
 
-	api.pushLog("INFO", job.Name, "Job created: "+job.Schedule)
+	project := extractProject(job.Name)
+	api.pushLog(project, "INFO", job.Name, "Job created: "+job.Schedule)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(job)
 }
@@ -210,7 +211,8 @@ func (api *API) deleteJob(w http.ResponseWriter, name string) {
 	delete(api.jobs, name)
 	api.mu.Unlock()
 
-	api.pushLog("INFO", name, "Job deleted")
+	project := extractProject(name)
+	api.pushLog(project, "INFO", name, "Job deleted")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{})
 }
@@ -280,7 +282,8 @@ func (api *API) scheduleJobLocked(job *Job) {
 }
 
 func (api *API) executeJob(job *Job) {
-	api.pushLog("INFO", job.Name, "Job started")
+	project := extractProject(job.Name)
+	api.pushLog(project, "INFO", job.Name, "Job started")
 	startTime := time.Now()
 
 	var err error
@@ -296,10 +299,10 @@ func (api *API) executeJob(job *Job) {
 	job.LastAttemptTime = startTime.Format(time.RFC3339)
 	if err != nil {
 		job.Status = &Status{Code: 13, Message: err.Error()}
-		api.pushLog("ERROR", job.Name, "Job failed: "+err.Error())
+		api.pushLog(project, "ERROR", job.Name, "Job failed: "+err.Error())
 	} else {
 		job.Status = &Status{Code: 0, Message: "Success"}
-		api.pushLog("INFO", job.Name, "Job finished successfully")
+		api.pushLog(project, "INFO", job.Name, "Job finished successfully")
 	}
 	api.mu.Unlock()
 }
@@ -375,4 +378,14 @@ func extractJobName(path string) string {
 		return parts[0] + "/jobs/" + parts[1]
 	}
 	return ""
+}
+
+func extractProject(path string) string {
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if p == "projects" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "default-project"
 }

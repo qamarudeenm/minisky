@@ -642,7 +642,7 @@ func (api *API) deployResource(w http.ResponseWriter, r *http.Request) { log.Pri
 	}
 
 	if req.Project == "" {
-		req.Project = "local-dev-project"
+		req.Project = "default-project"
 	}
 	if req.Location == "" {
 		req.Location = "us-central1"
@@ -784,8 +784,14 @@ func (api *API) handleDeleteAction(w http.ResponseWriter, r *http.Request) {
 	api.mu.Lock()
 	defer api.mu.Unlock()
 
-	project := "local-dev-project"
-	location := "us-central1"
+	project := extractSegmentAfter(r.URL.Path, "projects")
+	if project == "" {
+		project = r.URL.Query().Get("project")
+	}
+	if project == "" {
+		project = "default-project"
+	}
+	location := firstOf(extractSegmentAfter(r.URL.Path, "locations"), "us-central1")
 	key := serverlessKey(project, location, shortName)
 
 	if resType == "function" {
@@ -827,8 +833,10 @@ func (api *API) getOperation(w http.ResponseWriter, r *http.Request, path string
 		writeError(w, 404, "NOT_FOUND", "Operation not found: "+opName)
 		return
 	}
+	project := extractSegmentAfter(path, "projects")
+	if project == "" { project = "default-project" }
 	res := map[string]interface{}{
-		"name":     fmt.Sprintf("projects/%s/locations/%s/operations/%s", "p1", "us-central1", op.Name), // simplified for dashboard
+		"name":     fmt.Sprintf("projects/%s/locations/%s/operations/%s", project, "us-central1", op.Name), // simplified for dashboard
 		"done":     op.Done,
 		"metadata": map[string]string{"@type": "type.googleapis.com/google.cloud.functions.v2.OperationMetadata"},
 	}

@@ -100,11 +100,11 @@ func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManage
 }
 
 // pushLog emits a structured log entry to Cloud Logging (no-op if logAPI is nil)
-func (api *API) pushLog(severity, service, text string) {
+func (api *API) pushLog(projectId, severity, service, text string) {
 	if api.logAPI == nil {
 		return
 	}
-	api.logAPI.PushLog(severity, "gae_app", service, text)
+	api.logAPI.PushLog(projectId, severity, "gae_app", service, text)
 }
 
 
@@ -214,7 +214,7 @@ func (api *API) handleVersions(w http.ResponseWriter, r *http.Request) {
 		// Cleanup container
 		containerName := fmt.Sprintf("minisky-appengine-%s-%s-%s", appId, serviceId, versionId)
 		api.svcMgr.DeleteComputeVM(containerName)
-		api.pushLog("INFO", serviceId, fmt.Sprintf("Deleted version %s", versionId))
+		api.pushLog(appId, "INFO", serviceId, fmt.Sprintf("Deleted version %s", versionId))
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{"done": true})
 	}
@@ -241,7 +241,7 @@ func (api *API) handleDirectDeploy(w http.ResponseWriter, r *http.Request) {
 	fullName := fmt.Sprintf("apps/%s/services/%s/versions/%s", req.Project, req.Service, req.Version)
 	op := api.opMgr.Register("appengine#operation", "CREATE", fullName, "", "us-central1")
 
-	api.pushLog("INFO", req.Service, fmt.Sprintf("Starting deployment of version %s (runtime: %s)", req.Version, req.Runtime))
+	api.pushLog(req.Project, "INFO", req.Service, fmt.Sprintf("Starting deployment of version %s (runtime: %s)", req.Version, req.Runtime))
 
 	// Initialize state
 	api.mu.Lock()
@@ -281,10 +281,10 @@ func (api *API) handleDirectDeploy(w http.ResponseWriter, r *http.Request) {
 		containerName := fmt.Sprintf("minisky-appengine-%s-%s-%s", req.Project, req.Service, req.Version)
 		_, err = api.svcMgr.ProvisionServerlessVM(containerName, image, []string{"PORT=8080", "GAE_SERVICE="+req.Service, "GAE_VERSION="+req.Version})
 		if err != nil {
-			api.pushLog("ERROR", req.Service, fmt.Sprintf("Deployment failed for version %s: %v", req.Version, err))
+			api.pushLog(req.Project, "ERROR", req.Service, fmt.Sprintf("Deployment failed for version %s: %v", req.Version, err))
 			return err
 		}
-		api.pushLog("INFO", req.Service, fmt.Sprintf("Version %s deployed successfully", req.Version))
+		api.pushLog(req.Project, "INFO", req.Service, fmt.Sprintf("Version %s deployed successfully", req.Version))
 		return nil
 	})
 
