@@ -42,6 +42,7 @@ export default function ServiceCard({
       case 'appengine': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'memorystore': return <StorageIcon sx={{ color: '#c5221f', fontSize: '1.2rem' }}/>;
       case 'secretmanager': return <LockIcon sx={{ color: '#1e8e3e', fontSize: '1.2rem' }}/>;
+      case 'cloudtasks': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'firebase-auth':
       case 'firebase-rtdb':
       case 'firebase-hosting':
@@ -188,6 +189,10 @@ export default function ServiceCard({
 
           {s.id === 'secretmanager' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Secrets</Button>
+          )}
+          
+          {s.id === 'cloudtasks' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Tasks</Button>
           )}
 
           {s.id === 'spanner' && s.status === 'RUNNING' && onManage && (

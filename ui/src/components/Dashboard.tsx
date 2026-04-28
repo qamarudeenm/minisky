@@ -18,6 +18,7 @@ import AppEngineManagerDrawer from './AppEngineManagerDrawer';
 import MemorystoreManagerDrawer from './MemorystoreManagerDrawer';
 import SchedulerManagerDrawer from './SchedulerManagerDrawer';
 import SecretManagerDrawer from './SecretManagerDrawer';
+import CloudTasksDrawer from './CloudTasksDrawer';
 
 export default function Dashboard() {
   const { 
@@ -40,6 +41,7 @@ export default function Dashboard() {
   const [memorystoreDrawerOpen, setMemorystoreDrawerOpen] = useState(false);
   const [schedulerDrawerOpen, setSchedulerDrawerOpen] = useState(false);
   const [secretManagerDrawerOpen, setSecretManagerDrawerOpen] = useState(false);
+  const [cloudTasksDrawerOpen, setCloudTasksDrawerOpen] = useState(false);
 
   const serverlessService = services.find(s => s.id === 'serverless');
   const isBuildpacksEnabled = settings.MINISKY_SERVERLESS_BACKEND === 'buildpacks';
@@ -89,6 +91,7 @@ export default function Dashboard() {
                 if (id === 'memorystore') setMemorystoreDrawerOpen(true);
                 if (id === 'scheduler') setSchedulerDrawerOpen(true);
                 if (id === 'secretmanager') setSecretManagerDrawerOpen(true);
+                if (id === 'cloudtasks') setCloudTasksDrawerOpen(true);
                 if (id === 'cloudfunctions' || id === 'serverless') setServerlessDrawerOpen(true);
               }}
               onInstallDependency={handleInstallDependency}
@@ -125,6 +128,7 @@ export default function Dashboard() {
       <MemorystoreManagerDrawer open={memorystoreDrawerOpen} onClose={() => setMemorystoreDrawerOpen(false)} />
       <SchedulerManagerDrawer open={schedulerDrawerOpen} onClose={() => setSchedulerDrawerOpen(false)} onCreated={() => {}} />
       <SecretManagerDrawer open={secretManagerDrawerOpen} onClose={() => setSecretManagerDrawerOpen(false)} />
+      <CloudTasksDrawer open={cloudTasksDrawerOpen} onClose={() => setCloudTasksDrawerOpen(false)} />
 
       <style>{`
         @keyframes fadeIn {

@@ -24,7 +24,7 @@ import MonitoringPage from './components/MonitoringPage';
 import FirebasePage from './components/FirebasePage';
 import AppEnginePage from './components/AppEnginePage';
 import MemorystorePage from './components/MemorystorePage';
-import SchedulerPage from './components/SchedulerPage';
+import TasksAndSchedulingPage from './components/TasksAndSchedulingPage';
 import SecurityPage from './components/SecurityPage';
 
 const DRAWER_WIDTH = 280;
@@ -39,7 +39,7 @@ const NAV_ITEMS = [
   { to: '/appengine', label: 'App Engine',                icon: <RocketLaunchIcon /> },
   { to: '/security',  label: 'Security & Identity',       icon: <SecurityIcon /> },
   { to: '/memorystore', label: 'Memorystore',             icon: <StorageIcon /> },
-  { to: '/scheduler',   label: 'Cloud Scheduler',         icon: <ScheduleIcon /> },
+  { to: '/tasks',       label: 'Tasks & Scheduling',     icon: <ScheduleIcon /> },
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: React.ReactNode }) {
@@ -162,7 +162,7 @@ function NavigationContent() {
           <Route path="/appengine" element={<AppEnginePage />} />
           <Route path="/security"  element={<SecurityPage />} />
           <Route path="/memorystore" element={<MemorystorePage />} />
-          <Route path="/scheduler" element={<SchedulerPage />} />
+          <Route path="/tasks" element={<TasksAndSchedulingPage />} />
         </Routes>
       </Box>
     </Box>

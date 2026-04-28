@@ -175,7 +175,7 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 	containerPort := strings.Split(iconfig.ContainerPort, "/")[0]
 	internalAddr := strings.TrimPrefix(internalURL, "http://")
 	log.Printf("[Orchestrator] Waiting for readiness probe at %s...", internalAddr)
-	if err := sm.waitUntilReady(internalAddr, 30*time.Second); err != nil {
+	if err := sm.waitUntilReady(internalAddr, 60*time.Second); err != nil {
 		return "", fmt.Errorf("readiness probe failed: %v", err)
 	}
 

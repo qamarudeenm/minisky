@@ -98,10 +98,11 @@ func NewAPIHandler(
 	mux.HandleFunc("/api/manage/logging/container", api.handleContainerLogs)
 	mux.HandleFunc("/api/manage/monitoring/stats", api.handleMonitoringStats)
 	mux.Handle("/api/manage/firebase/", api.handleManageFirebase())
+	mux.Handle("/api/manage/cloudtasks/", api.handleManageCloudTasks())
+	mux.Handle("/api/manage/secretmanager/", api.handleManageSecretManager())
 	mux.Handle("/api/manage/appengine/", api.handleManageAppEngine())
 	mux.Handle("/api/manage/memorystore/", api.handleManageMemorystore())
 	mux.Handle("/api/manage/scheduler/", api.handleManageScheduler())
-	mux.Handle("/api/manage/secretmanager/", api.handleManageSecretManager())
 	return mux
 }
 
@@ -205,6 +206,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "memorystore", Name: "cloud-memorystore", Label: "Memorystore", Status: "RUNNING", Port: nil, Description: "In-memory data store for Redis and Memcached"},
 		{ID: "scheduler", Name: "cloud-scheduler", Label: "Cloud Scheduler", Status: "RUNNING", Port: nil, Description: "Managed cron job service for triggering HTTP/PubSub endpoints"},
 		{ID: "secretmanager", Name: "secret-manager", Label: "Secret Manager", Status: "RUNNING", Port: nil, Description: "Secure storage for sensitive information with versioning and audit logs"},
+		{ID: "cloudtasks", Name: "cloud-tasks", Label: "Cloud Tasks", Status: "RUNNING", Port: nil, Description: "Managed task execution and delivery service"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -237,6 +239,7 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 		"firebase-rtdb": "firebaseio.com",
 		"firebase-hosting": "firebasehosting.googleapis.com",
 		"memorystore": "redis.googleapis.com",
+		"cloudtasks": "cloudtasks.googleapis.com",
 	}
 
 	if action == "start" {
@@ -614,6 +617,23 @@ func (api *API) handleManageSecretManager() http.Handler {
 		req.URL.Path = "/v1" + path
 		req.Host = "secretmanager.googleapis.com"
 		log.Printf("[UI/API Proxy] Secret Manager \u2192 %s", req.URL.Path)
+	}
+	return proxy
+}
+
+func (api *API) handleManageCloudTasks() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/cloudtasks")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		req.URL.Path = "/v2" + path
+		req.Host = "cloudtasks.googleapis.com"
+		log.Printf("[UI/API Proxy DEBUG] %s Cloud Tasks %s", req.Method, req.URL.Path)
 	}
 	return proxy
 }
