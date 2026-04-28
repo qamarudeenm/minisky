@@ -536,11 +536,16 @@ func (sm *ServiceManager) ProvisionBuildStep(containerName string, image string,
 	}
 
 	payload := map[string]interface{}{
-		"Image": image,
-		"Env":   append(sm.standardEnv(), env...),
+		"Image":      image,
+		"WorkingDir": "/workspace",
+		"Env":        append(sm.standardEnv(), env...),
 		"HostConfig": map[string]interface{}{
 			"NetworkMode": networkName,
 			"Binds":       binds,
+		},
+		"Labels": map[string]string{
+			"managed-by": "minisky-build",
+			"build-id":   containerName,
 		},
 	}
 	if len(cmd) > 0 {

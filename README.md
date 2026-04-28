@@ -85,3 +85,5 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## 📄 License
 
 MiniSky is released under the [MIT License](LICENSE).
+
+go build -o minisky ./cmd/minisky && ./minisky start
