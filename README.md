@@ -31,7 +31,7 @@ MiniSky requires the following tools installed and running on your local machine
 ### Installation
 **Linux & macOS:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/qamarudeenm/minisky/main/install.sh | sh
+curl -sSL https://minisky.bmics.com.ng/install.sh | sh
 ```
 
 **Windows:**
