@@ -15,6 +15,7 @@ type ImageRegistry struct {
 	Serverless ServerlessConfig         `json:"serverless"`
 	Dataproc   DataprocConfig           `json:"dataproc"`
 	Memorystore MemorystoreConfig       `json:"memorystore"`
+	CloudBuild  CloudBuildConfig        `json:"cloudbuild"`
 }
 
 type EmulatorConfig struct {
@@ -79,6 +80,10 @@ type MemoryVersion struct {
 	Version string `json:"version"`
 	Label   string `json:"label"`
 	Image   string `json:"image"`
+}
+
+type CloudBuildConfig struct {
+	DefaultBuilder string `json:"default_builder"`
 }
 
 var (
@@ -150,5 +155,9 @@ func fallbackRegistry() *ImageRegistry {
 			Memcached: MemoryEngineConfig{DefaultImage: "memcached:latest"},
 			Valkey:    MemoryEngineConfig{DefaultImage: "valkey/valkey:latest"},
 		},
+		CloudBuild: CloudBuildConfig{
+			DefaultBuilder: "ubuntu:26.04",
+		},
 	}
 }
+

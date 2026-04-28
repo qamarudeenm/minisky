@@ -19,6 +19,8 @@ import MemorystoreManagerDrawer from './MemorystoreManagerDrawer';
 import SchedulerManagerDrawer from './SchedulerManagerDrawer';
 import SecretManagerDrawer from './SecretManagerDrawer';
 import CloudTasksDrawer from './CloudTasksDrawer';
+import CloudKmsDrawer from './CloudKmsDrawer';
+import CloudBuildDrawer from './CloudBuildDrawer';
 
 export default function Dashboard() {
   const { 
@@ -42,6 +44,8 @@ export default function Dashboard() {
   const [schedulerDrawerOpen, setSchedulerDrawerOpen] = useState(false);
   const [secretManagerDrawerOpen, setSecretManagerDrawerOpen] = useState(false);
   const [cloudTasksDrawerOpen, setCloudTasksDrawerOpen] = useState(false);
+  const [cloudKmsDrawerOpen, setCloudKmsDrawerOpen] = useState(false);
+  const [cloudBuildDrawerOpen, setCloudBuildDrawerOpen] = useState(false);
 
   const serverlessService = services.find(s => s.id === 'serverless');
   const isBuildpacksEnabled = settings.MINISKY_SERVERLESS_BACKEND === 'buildpacks';
@@ -92,6 +96,8 @@ export default function Dashboard() {
                 if (id === 'scheduler') setSchedulerDrawerOpen(true);
                 if (id === 'secretmanager') setSecretManagerDrawerOpen(true);
                 if (id === 'cloudtasks') setCloudTasksDrawerOpen(true);
+                if (id === 'cloudkms') setCloudKmsDrawerOpen(true);
+                if (id === 'cloudbuild') setCloudBuildDrawerOpen(true);
                 if (id === 'cloudfunctions' || id === 'serverless') setServerlessDrawerOpen(true);
               }}
               onInstallDependency={handleInstallDependency}
@@ -129,6 +135,8 @@ export default function Dashboard() {
       <SchedulerManagerDrawer open={schedulerDrawerOpen} onClose={() => setSchedulerDrawerOpen(false)} onCreated={() => {}} />
       <SecretManagerDrawer open={secretManagerDrawerOpen} onClose={() => setSecretManagerDrawerOpen(false)} />
       <CloudTasksDrawer open={cloudTasksDrawerOpen} onClose={() => setCloudTasksDrawerOpen(false)} />
+      <CloudKmsDrawer open={cloudKmsDrawerOpen} onClose={() => setCloudKmsDrawerOpen(false)} />
+      <CloudBuildDrawer open={cloudBuildDrawerOpen} onClose={() => setCloudBuildDrawerOpen(false)} />
 
       <style>{`
         @keyframes fadeIn {

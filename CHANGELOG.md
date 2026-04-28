@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Cloud KMS Shim**: Fully native Go-based implementation using AES-256-GCM. Supports Key Ring and Crypto Key management, key version creation, key rotation, and version destruction. Full encrypt/decrypt operations via the REST API and UI Dashboard.
+- **Cloud Build Shim**: Native implementation supporting the `cloudbuild.googleapis.com` API. Features include asynchronous build execution, multi-step pipeline orchestration using transient Docker containers, and a specialized UI drawer for build submission and history tracking.
 
 ### Fixed
 - **Memorystore Container Provisioning**: Fixed a critical bug where Memorystore instances were failing to provision due to an invalid JSON payload sent to the Docker API. 

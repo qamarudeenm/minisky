@@ -104,6 +104,7 @@ func NewAPIHandler(
 	mux.Handle("/api/manage/memorystore/", api.handleManageMemorystore())
 	mux.Handle("/api/manage/scheduler/", api.handleManageScheduler())
 	mux.Handle("/api/manage/cloudkms/", api.handleManageCloudKms())
+	mux.Handle("/api/manage/cloudbuild/", api.handleManageCloudBuild())
 	return mux
 }
 
@@ -654,6 +655,23 @@ func (api *API) handleManageCloudKms() http.Handler {
 		req.URL.Path = "/v1" + path
 		req.Host = "cloudkms.googleapis.com"
 		log.Printf("[UI/API Proxy] Cloud KMS → %s", req.URL.Path)
+	}
+	return proxy
+}
+
+func (api *API) handleManageCloudBuild() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/cloudbuild")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		req.URL.Path = "/v1" + path
+		req.Host = "cloudbuild.googleapis.com"
+		log.Printf("[UI/API Proxy] Cloud Build → %s", req.URL.Path)
 	}
 	return proxy
 }

@@ -30,6 +30,7 @@ type Operation struct {
 	InsertTime string `json:"insertTime,omitempty"`
 	StartTime  string `json:"startTime,omitempty"`
 	EndTime    string `json:"endTime,omitempty"`
+	Metadata   interface{} `json:"metadata,omitempty"`
 	// Error is only set when the operation fails.
 	Error *OperationError `json:"error,omitempty"`
 	// Zone or Region scoping (optional, service-specific)
@@ -112,6 +113,31 @@ func (om *OperationManager) Advance(name string, progress int, status OperationS
 		op.Progress = 100
 		op.EndTime = time.Now().UTC().Format(time.RFC3339)
 	}
+}
+
+// UpdateMetadata updates the metadata of an operation.
+func (om *OperationManager) UpdateMetadata(name string, metadata interface{}) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+	if op, ok := om.ops[name]; ok {
+		op.Metadata = metadata
+	}
+}
+
+// MarkDone marks the operation as successfully completed.
+func (om *OperationManager) MarkDone(name string) {
+	om.Advance(name, 100, StatusDone)
+}
+
+// List returns all operations in the registry.
+func (om *OperationManager) List() []*Operation {
+	om.mu.RLock()
+	defer om.mu.RUnlock()
+	res := make([]*Operation, 0, len(om.ops))
+	for _, op := range om.ops {
+		res = append(res, op)
+	}
+	return res
 }
 
 // Fail marks the operation as DONE with an error.

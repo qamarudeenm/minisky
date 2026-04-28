@@ -194,6 +194,10 @@ export default function ServiceCard({
           {s.id === 'cloudkms' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage KMS</Button>
           )}
+
+          {s.id === 'cloudbuild' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Builds</Button>
+          )}
           
           {s.id === 'cloudtasks' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Tasks</Button>

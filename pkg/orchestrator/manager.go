@@ -184,6 +184,26 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 }
 
 // StopServiceContainer stops the underlying docker container for a given service domain.
+func (sm *ServiceManager) StopAndRemoveContainer(name string) error {
+	// 1. Stop
+	stopURL := fmt.Sprintf("http://localhost/containers/%s/stop", name)
+	reqStop, _ := http.NewRequest("POST", stopURL, nil)
+	respStop, err := sm.dockerClient.Do(reqStop)
+	if err == nil {
+		respStop.Body.Close()
+	}
+
+	// 2. Remove
+	rmURL := fmt.Sprintf("http://localhost/containers/%s?force=true", name)
+	reqRm, _ := http.NewRequest("DELETE", rmURL, nil)
+	respRm, err := sm.dockerClient.Do(reqRm)
+	if err != nil {
+		return err
+	}
+	defer respRm.Body.Close()
+	return nil
+}
+
 func (sm *ServiceManager) StopServiceContainer(ctx context.Context, domain string) error {
 	reg := config.GetImageRegistry()
 	cfg, exists := reg.Emulators[domain]

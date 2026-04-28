@@ -148,5 +148,8 @@
         { "version": "7.2", "label": "Valkey 7.2", "image": "valkey/valkey:7.2.12-alpine" }
       ]
     }
+  },
+  "cloudbuild": {
+    "default_builder": "ubuntu:26.04"
   }
 }

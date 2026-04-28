@@ -10,6 +10,7 @@ import (
 	_ "minisky/pkg/shims/cloudsql"
 	_ "minisky/pkg/shims/cloudkms"
 	_ "minisky/pkg/shims/cloudtasks"
+	_ "minisky/pkg/shims/cloudbuild"
 	_ "minisky/pkg/shims/compute"
 	_ "minisky/pkg/shims/dataproc"
 	_ "minisky/pkg/shims/dns"
