@@ -15,7 +15,7 @@ MiniSky provides a seamless, professional-grade development environment that emu
 
 ## ✨ Features
 
-- **🚀 16+ GCP Services**: Support for Compute Engine, GKE, Bigtable, Pub/Sub, Storage, Cloud SQL, and more.
+- **🚀 29+ GCP Services**: Support for Compute Engine, GKE, Bigtable, Pub/Sub, Storage, Cloud SQL, Vertex AI, Artifact Registry, and more.
 - **🖥️ Embedded Dashboard**: Real-time observability and resource management via a premium web UI.
 - **🛠️ Terraform Ready**: First-class support for the official Google Cloud Terraform provider via custom endpoint routing.
 - **🔌 Dynamic Registry**: Modular plugin system for community-led service contributions.
