@@ -245,6 +245,34 @@ func (sm *ServiceManager) discoverInternalURL(config ContainerConfig) (string, e
 	return fmt.Sprintf("http://127.0.0.1:%s", bindings[0].HostPort), nil
 }
 
+// GetContainerHostPort reads the host-bound port assigned by Docker.
+func (sm *ServiceManager) GetContainerHostPort(containerName string, containerPort string) (string, error) {
+	resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", containerName))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var info struct {
+		NetworkSettings struct {
+			Ports map[string][]struct {
+				HostIp   string
+				HostPort string
+			}
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", err
+	}
+
+	bindings, ok := info.NetworkSettings.Ports[containerPort]
+	if !ok || len(bindings) == 0 || bindings[0].HostPort == "" {
+		return "", fmt.Errorf("container '%s' has no host port binding for %s", containerName, containerPort)
+	}
+
+	return bindings[0].HostPort, nil
+}
+
 // Teardown stops and removes all minisky-* containers and the minisky-net network.
 func (sm *ServiceManager) Teardown(ctx context.Context) {
 	reg := config.GetImageRegistry()
@@ -445,13 +473,15 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 
 	payload := map[string]interface{}{
 		"Image":        osImage,
-		"Cmd":          cmd,
 		"Env":          append(sm.standardEnv(), env...),
 		"ExposedPorts": exposedPorts,
 		"HostConfig": map[string]interface{}{
 			"NetworkMode":  netMode,
 			"PortBindings": portBindings,
 		},
+	}
+	if len(cmd) > 0 {
+		payload["Cmd"] = cmd
 	}
 	data, _ := json.Marshal(payload)
 	url := fmt.Sprintf("http://localhost/containers/create?name=%s", containerName)

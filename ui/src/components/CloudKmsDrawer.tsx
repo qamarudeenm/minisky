@@ -215,7 +215,7 @@ export default function CloudKmsDrawer({ open, onClose }: Props) {
   const stateColor = (s: string) => s === 'ENABLED' ? 'success' : s === 'DESTROYED' ? 'error' : 'default';
 
   return (
-    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: 600 } }}>
+    <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: 600 } }}>
       <Box sx={{ p: 4, height: '100%', overflow: 'auto' }}>
         {/* Header */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

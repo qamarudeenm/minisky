@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1] - 2026-04-24
 
 ### Added
+- **Cloud KMS Shim**: Fully native Go-based implementation using AES-256-GCM. Supports Key Ring and Crypto Key management, key version creation, key rotation, and version destruction. Full encrypt/decrypt operations via the REST API and UI Dashboard.
+
+### Fixed
+- **Memorystore Container Provisioning**: Fixed a critical bug where Memorystore instances were failing to provision due to an invalid JSON payload sent to the Docker API. 
+- **Memorystore Dynamic Ports**: Updated the Orchestrator to support dynamic port bindings, allowing multiple Redis/Memcached instances to run without host port conflicts. The correctly assigned port is now reflected in the dashboard UI.
+
 - **Native Windows Support**: Implemented cross-platform Docker socket resolution to support Windows Named Pipes (`//./pipe/docker_engine`).
 - **New Visual Identity**: Integrated the official MiniSky favicon across the web landing page and embedded dashboard.
 - **Improved Documentation**: 

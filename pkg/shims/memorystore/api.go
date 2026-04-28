@@ -234,7 +234,7 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 		}
 		
 		containerName := fmt.Sprintf("minisky-%s-%s", containerPrefix, id)
-		err := api.svcMgr.ProvisionComputeVM(containerName, image, "default", []string{}, []string{}, nil)
+		err := api.svcMgr.ProvisionComputeVM(containerName, image, "default", []string{fmt.Sprintf("%d", req.Instance.Port)}, []string{}, nil)
 		
 		api.mu.Lock()
 		if err != nil {
@@ -243,6 +243,20 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 		} else {
 			req.Instance.State = "READY"
 			api.pushLog(project, "INFO", id, fmt.Sprintf("Instance %s is now READY", id))
+			
+			// Retrieve the dynamic host port assigned by Docker
+			containerPort := "6379/tcp"
+			if !isRedis {
+				containerPort = "11211/tcp"
+			}
+			hostPortStr, err := api.svcMgr.GetContainerHostPort(containerName, containerPort)
+			if err == nil {
+				importStrconv := true
+				_ = importStrconv
+				var portInt int
+				fmt.Sscanf(hostPortStr, "%d", &portInt)
+				req.Instance.Port = portInt
+			}
 		}
 		api.mu.Unlock()
 		return err
