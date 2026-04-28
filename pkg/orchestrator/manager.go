@@ -527,6 +527,44 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 }
 
 // ProvisionCloudSQLVM starts a fully-interactive PostgreSQL or MySQL docker database data plane.
+func (sm *ServiceManager) ProvisionBuildStep(containerName string, image string, binds []string, env []string, cmd []string) error {
+	log.Printf("[Orchestrator] Provisioning build step: %s (image: %s binds: %v cmd: %v)", containerName, image, binds, cmd)
+	
+	exists, _ := sm.ImageExistsPublic(image)
+	if !exists {
+		sm.pullImageInternal(image)
+	}
+
+	payload := map[string]interface{}{
+		"Image": image,
+		"Env":   append(sm.standardEnv(), env...),
+		"HostConfig": map[string]interface{}{
+			"NetworkMode": networkName,
+			"Binds":       binds,
+		},
+	}
+	if len(cmd) > 0 {
+		payload["Cmd"] = cmd
+	}
+	data, _ := json.Marshal(payload)
+	url := fmt.Sprintf("http://localhost/containers/create?name=%s", containerName)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	req.Header.Set("Content-Type", "application/json")
+	
+	resp, err := sm.dockerClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("build step creation rejected %d: %s", resp.StatusCode, b)
+	}
+
+	return sm.startContainer(containerName)
+}
+
 func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version string, rootPassword string) (string, error) {
 	var image string
 	var env []string

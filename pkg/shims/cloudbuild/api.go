@@ -206,7 +206,7 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 		
 		cloneContainer := fmt.Sprintf("minisky-build-clone-%s", build.Id)
 		// We use a helper container to clone into a volume
-		err := api.svcMgr.ProvisionComputeVM(cloneContainer, "alpine/git:latest", "default", []string{workspaceVol + ":/workspace"}, []string{}, []string{"clone", "-b", branch, repo, "/workspace"})
+		err := api.svcMgr.ProvisionBuildStep(cloneContainer, "alpine/git:latest", []string{workspaceVol + ":/workspace"}, []string{}, []string{"clone", "-b", branch, repo, "/workspace"})
 		if err != nil {
 			api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Source clone failed: %v", err))
 			failed = true
@@ -232,7 +232,7 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 
 			containerName := fmt.Sprintf("minisky-build-step-%s-%d", build.Id, i)
 			// Mount the workspace volume to all steps
-			err := api.svcMgr.ProvisionComputeVM(containerName, img, "default", []string{workspaceVol + ":/workspace"}, step.Env, step.Args)
+			err := api.svcMgr.ProvisionBuildStep(containerName, img, []string{workspaceVol + ":/workspace"}, step.Env, step.Args)
 			if err != nil {
 				api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Step #%d failed: %v", i, err))
 				failed = true
