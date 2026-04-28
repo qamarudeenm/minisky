@@ -156,5 +156,10 @@
     "image": "registry:2",
     "port": "5000/tcp",
     "domain": "artifactregistry.googleapis.com"
+  },
+  "vertex_ai": {
+    "image": "ollama/ollama:latest",
+    "port": "11434/tcp",
+    "domain": "aiplatform.googleapis.com"
   }
 }

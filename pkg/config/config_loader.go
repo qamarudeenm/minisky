@@ -17,6 +17,7 @@ type ImageRegistry struct {
 	Memorystore MemorystoreConfig       `json:"memorystore"`
 	CloudBuild  CloudBuildConfig        `json:"cloudbuild"`
 	ArtifactRegistry ArtifactRegistryConfig `json:"artifact_registry"`
+	VertexAI    VertexAiConfig          `json:"vertex_ai"`
 }
 
 type EmulatorConfig struct {
@@ -88,6 +89,12 @@ type CloudBuildConfig struct {
 }
 
 type ArtifactRegistryConfig struct {
+	Image  string `json:"image"`
+	Port   string `json:"port"`
+	Domain string `json:"domain"`
+}
+
+type VertexAiConfig struct {
 	Image  string `json:"image"`
 	Port   string `json:"port"`
 	Domain string `json:"domain"`

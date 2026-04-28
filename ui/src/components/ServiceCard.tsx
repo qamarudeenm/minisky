@@ -7,6 +7,7 @@ import StorageIcon from '@mui/icons-material/Storage';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import LockIcon from '@mui/icons-material/LockOutlined';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import { Service } from '../hooks/useServices';
 
 type ServiceCardProps = {
@@ -42,6 +43,7 @@ export default function ServiceCard({
       case 'appengine': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'memorystore': return <StorageIcon sx={{ color: '#c5221f', fontSize: '1.2rem' }}/>;
       case 'artifactregistry': return <StorageIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
+      case 'vertexai': return <PsychologyIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'secretmanager': return <LockIcon sx={{ color: '#1e8e3e', fontSize: '1.2rem' }}/>;
       case 'cloudtasks': return <RocketLaunchIcon sx={{ color: '#1a73e8', fontSize: '1.2rem' }}/>;
       case 'firebase-auth':
@@ -202,6 +204,10 @@ export default function ServiceCard({
 
           {s.id === 'artifactregistry' && s.status === 'RUNNING' && onManage && (
             <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage Registry</Button>
+          )}
+
+          {s.id === 'vertexai' && s.status === 'RUNNING' && onManage && (
+            <Button size="small" variant="contained" color="secondary" onClick={() => onManage(s.id)}>Manage AI Models</Button>
           )}
           
           {s.id === 'cloudtasks' && s.status === 'RUNNING' && onManage && (
