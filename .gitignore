@@ -1,6 +1,6 @@
 # Binaries
-minisky
-minisky.exe
+/minisky
+/minisky.exe
 bin/
 
 # MiniSky Local State
