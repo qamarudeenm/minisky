@@ -4,9 +4,22 @@ import SchedulerPage from './SchedulerPage';
 import CloudTasksPageContent from './CloudTasksPageContent';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import BuildIcon from '@mui/icons-material/Build';
+import { useServices } from '../hooks/useServices';
+import ServiceCard from './ServiceCard';
+import CloudBuildDrawer from './CloudBuildDrawer';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 export default function TasksAndSchedulingPage() {
   const [tab, setTab] = useState(0);
+  const { activeProject } = useProjectContext();
+  const { 
+    services, settings, handleStartContainer, handleStopContainer, toggleSetting, handleInstallDependency 
+  } = useServices();
+  
+  const [buildDrawerOpen, setBuildDrawerOpen] = useState(false);
+
+  const buildService = services.find(s => s.id === 'cloudbuild');
 
   return (
     <Box>
@@ -36,13 +49,29 @@ export default function TasksAndSchedulingPage() {
         >
           <Tab icon={<RocketLaunchIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Cloud Tasks" />
           <Tab icon={<ScheduleIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Cloud Scheduler" />
+          <Tab icon={<BuildIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Cloud Build" />
         </Tabs>
 
         <Box sx={{ p: 4 }}>
           {tab === 0 && <CloudTasksPageContent />}
           {tab === 1 && <SchedulerPage />}
+          {tab === 2 && buildService && (
+            <Box sx={{ maxWidth: 400 }}>
+              <ServiceCard 
+                service={buildService} 
+                idx={0} 
+                settings={settings}
+                onStartContainer={(id) => handleStartContainer(id, activeProject)}
+                onStopContainer={handleStopContainer}
+                onToggleSetting={toggleSetting}
+                onManage={() => setBuildDrawerOpen(true)}
+                onInstallDependency={handleInstallDependency}
+              />
+            </Box>
+          )}
         </Box>
       </Paper>
+      <CloudBuildDrawer open={buildDrawerOpen} onClose={() => setBuildDrawerOpen(false)} />
     </Box>
   );
 }

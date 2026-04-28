@@ -210,6 +210,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "secretmanager", Name: "secret-manager", Label: "Secret Manager", Status: "RUNNING", Port: nil, Description: "Secure storage for sensitive information with versioning and audit logs"},
 		{ID: "cloudtasks", Name: "cloud-tasks", Label: "Cloud Tasks", Status: "RUNNING", Port: nil, Description: "Managed task execution and delivery service"},
 		{ID: "cloudkms", Name: "cloud-kms", Label: "Cloud KMS", Status: "RUNNING", Port: nil, Description: "AES-256-GCM key management and encrypt/decrypt operations"},
+		{ID: "cloudbuild", Name: "cloud-build", Label: "Cloud Build", Status: "RUNNING", Port: nil, Description: "Local CI/CD pipeline for executing multi-step build workflows"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -244,6 +245,7 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 		"memorystore": "redis.googleapis.com",
 		"cloudtasks": "cloudtasks.googleapis.com",
 		"cloudkms":   "cloudkms.googleapis.com",
+		"cloudbuild": "cloudbuild.googleapis.com",
 	}
 
 	if action == "start" {

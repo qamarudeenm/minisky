@@ -39,7 +39,7 @@ const NAV_ITEMS = [
   { to: '/appengine', label: 'App Engine',                icon: <RocketLaunchIcon /> },
   { to: '/security',  label: 'Security & Identity',       icon: <SecurityIcon /> },
   { to: '/memorystore', label: 'Memorystore',             icon: <StorageIcon /> },
-  { to: '/tasks',       label: 'Tasks & Scheduling',     icon: <ScheduleIcon /> },
+  { to: '/tasks',       label: 'Integration & CI/CD',     icon: <ScheduleIcon /> },
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: React.ReactNode }) {
