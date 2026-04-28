@@ -37,6 +37,33 @@ type Build struct {
 	CreateTime string `json:"createTime,omitempty"`
 	StartTime  string `json:"startTime,omitempty"`
 	FinishTime string `json:"finishTime,omitempty"`
+	Source     *Source `json:"source,omitempty"`
+}
+
+type Source struct {
+	RepoSource *RepoSource `json:"repoSource,omitempty"`
+}
+
+type RepoSource struct {
+	RepoName  string `json:"repoName"` // e.g. "github.com/user/repo"
+	BranchName string `json:"branchName,omitempty"`
+}
+
+type BuildTrigger struct {
+	Id          string `json:"id,omitempty"`
+	Description string `json:"description,omitempty"`
+	Github      *GithubConfig `json:"github,omitempty"`
+	Build       *Build `json:"build,omitempty"`
+}
+
+type GithubConfig struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+	Push  *PushFilter `json:"push,omitempty"`
+}
+
+type PushFilter struct {
+	Branch string `json:"branch,omitempty"`
 }
 
 type Step struct {
@@ -75,6 +102,36 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if project == "" { project = "local-dev-project" }
 		api.handleListBuilds(w, r, project)
+		return
+	}
+
+	if r.Method == "POST" && strings.HasSuffix(path, "/triggers") {
+		parts := strings.Split(path, "/")
+		var project string
+		for i, p := range parts {
+			if p == "projects" && i+1 < len(parts) {
+				project = parts[i+1]
+				break
+			}
+		}
+		if project == "" { project = "local-dev-project" }
+		api.handleCreateTrigger(w, r, project)
+		return
+	}
+
+	if r.Method == "POST" && strings.Contains(path, "/triggers/") && strings.HasSuffix(path, ":run") {
+		parts := strings.Split(path, "/")
+		var project, triggerId string
+		for i, p := range parts {
+			if p == "projects" && i+1 < len(parts) {
+				project = parts[i+1]
+			}
+			if p == "triggers" && i+1 < len(parts) {
+				triggerId = parts[i+1]
+			}
+		}
+		triggerId = strings.Split(triggerId, ":")[0]
+		api.handleRunTrigger(w, r, project, triggerId)
 		return
 	}
 
@@ -131,43 +188,109 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 	build.StartTime = time.Now().UTC().Format(time.RFC3339)
 	api.opMgr.UpdateMetadata(opName, build)
 	
-	failed := false
-	for i, step := range build.Steps {
-		api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d: %s %s", i, step.Name, strings.Join(step.Args, " ")))
-		
-		img := step.Name
-		if !strings.Contains(img, "/") && !strings.Contains(img, ":") {
-			img = img + ":latest"
-		}
-		
-		if strings.HasPrefix(img, "gcr.io/cloud-builders/") {
-			tool := strings.TrimPrefix(img, "gcr.io/cloud-builders/")
-			if tool == "docker" { img = "docker:latest" }
-		}
+	// Workspace volume for sharing code between steps
+	workspaceVol := fmt.Sprintf("minisky-build-workspace-%s", build.Id)
 
-		containerName := fmt.Sprintf("minisky-build-step-%s-%d", build.Id, i)
-		err := api.svcMgr.ProvisionComputeVM(containerName, img, "default", []string{}, step.Env, step.Args)
-		if err != nil {
-			api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Step #%d failed: %v", i, err))
-			failed = true
-			break
+	failed := false
+
+	// Implicit step: Clone source if provided
+	if build.Source != nil && build.Source.RepoSource != nil {
+		repo := build.Source.RepoSource.RepoName
+		if !strings.HasPrefix(repo, "http") {
+			repo = "https://" + repo
 		}
+		branch := build.Source.RepoSource.BranchName
+		if branch == "" { branch = "main" }
+
+		api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Cloning %s (branch: %s)...", repo, branch))
 		
-		time.Sleep(3 * time.Second) // Simulate build time
-		api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d finished successfully", i))
-		api.svcMgr.StopAndRemoveContainer(containerName)
+		cloneContainer := fmt.Sprintf("minisky-build-clone-%s", build.Id)
+		// We use a helper container to clone into a volume
+		err := api.svcMgr.ProvisionComputeVM(cloneContainer, "alpine/git:latest", "default", []string{workspaceVol + ":/workspace"}, []string{}, []string{"clone", "-b", branch, repo, "/workspace"})
+		if err != nil {
+			api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Source clone failed: %v", err))
+			failed = true
+		} else {
+			time.Sleep(3 * time.Second)
+			api.svcMgr.StopAndRemoveContainer(cloneContainer)
+		}
+	}
+
+	if !failed {
+		for i, step := range build.Steps {
+			api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d: %s %s", i, step.Name, strings.Join(step.Args, " ")))
+			
+			img := step.Name
+			if !strings.Contains(img, "/") && !strings.Contains(img, ":") {
+				img = img + ":latest"
+			}
+			
+			if strings.HasPrefix(img, "gcr.io/cloud-builders/") {
+				tool := strings.TrimPrefix(img, "gcr.io/cloud-builders/")
+				if tool == "docker" { img = "docker:latest" }
+			}
+
+			containerName := fmt.Sprintf("minisky-build-step-%s-%d", build.Id, i)
+			// Mount the workspace volume to all steps
+			err := api.svcMgr.ProvisionComputeVM(containerName, img, "default", []string{workspaceVol + ":/workspace"}, step.Env, step.Args)
+			if err != nil {
+				api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Step #%d failed: %v", i, err))
+				failed = true
+				break
+			}
+			
+			time.Sleep(3 * time.Second) // Simulate build time
+			api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d finished successfully", i))
+			api.svcMgr.StopAndRemoveContainer(containerName)
+		}
 	}
 
 	build.FinishTime = time.Now().UTC().Format(time.RFC3339)
 	if failed {
 		build.Status = "FAILURE"
-		api.opMgr.Fail(opName, 500, "Build failed at a step")
+		api.opMgr.Fail(opName, 500, "Build failed")
 	} else {
 		build.Status = "SUCCESS"
 		api.opMgr.MarkDone(opName)
 		api.pushLog(project, "INFO", build.Id, "Build SUCCESS")
 	}
 	api.opMgr.UpdateMetadata(opName, build)
+}
+
+func (api *API) handleCreateTrigger(w http.ResponseWriter, r *http.Request, project string) {
+	var trigger BuildTrigger
+	json.NewDecoder(r.Body).Decode(&trigger)
+	trigger.Id = fmt.Sprintf("trigger-%d", time.Now().Unix())
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(trigger)
+}
+
+func (api *API) handleRunTrigger(w http.ResponseWriter, r *http.Request, project, triggerId string) {
+	// In a real implementation, we'd look up the trigger by ID.
+	// For the emulator, we just simulate starting a build from "GitHub"
+	build := Build{
+		Id: fmt.Sprintf("build-trigger-%d", time.Now().Unix()),
+		ProjectId: project,
+		Status: "QUEUED",
+		CreateTime: time.Now().UTC().Format(time.RFC3339),
+		Source: &Source{
+			RepoSource: &RepoSource{
+				RepoName: "github.com/GoogleCloudPlatform/cloud-builders",
+				BranchName: "master",
+			},
+		},
+		Steps: []Step{
+			{Name: "ubuntu", Args: []string{"echo", "Triggered from GitHub!"}},
+		},
+	}
+
+	op := api.opMgr.Register("cloudbuild#operation", "RUN_TRIGGER", fmt.Sprintf("/v1/projects/%s/builds/%s", project, build.Id), "", "")
+	api.opMgr.UpdateMetadata(op.Name, build)
+	go api.executeBuild(project, build, op.Name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(op)
 }
 
 func (api *API) Proxy() *httputil.ReverseProxy {

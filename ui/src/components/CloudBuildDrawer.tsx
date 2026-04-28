@@ -23,6 +23,12 @@ interface Build {
   startTime?: string;
   finishTime?: string;
   steps: BuildStep[];
+  source?: {
+    repoSource: {
+      repoName: string;
+      branchName?: string;
+    };
+  };
 }
 
 interface Props {
@@ -40,6 +46,8 @@ export default function CloudBuildDrawer({ open, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const [expandedBuild, setExpandedBuild] = useState<string | null>(null);
+  const [sourceRepo, setSourceRepo] = useState('');
+  const [sourceBranch, setSourceBranch] = useState('main');
 
   const fetchBuilds = async () => {
     setLoading(true);
@@ -72,10 +80,20 @@ export default function CloudBuildDrawer({ open, onClose }: Props) {
         throw new Error('Invalid JSON configuration');
       }
 
+      const payload = {
+        ...body,
+        source: sourceRepo ? {
+          repoSource: {
+            repoName: sourceRepo,
+            branchName: sourceBranch
+          }
+        } : undefined
+      };
+
       const res = await fetch(`/api/manage/cloudbuild/v1/projects/${activeProject}/builds`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
       
       if (!res.ok) {
@@ -115,6 +133,28 @@ export default function CloudBuildDrawer({ open, onClose }: Props) {
 
         <Paper variant="outlined" sx={{ mb: 6, p: 3, background: '#f8f9fa' }}>
           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>Submit New Build</Typography>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#5f6368', fontWeight: 600 }}>SOURCE REPOSITORY (OPTIONAL)</Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField 
+                fullWidth 
+                size="small" 
+                placeholder="Repository (e.g. github.com/user/repo)" 
+                value={sourceRepo}
+                onChange={(e) => setSourceRepo(e.target.value)}
+                sx={{ backgroundColor: '#fff' }}
+              />
+              <TextField 
+                sx={{ width: 120, backgroundColor: '#fff' }} 
+                size="small" 
+                placeholder="Branch" 
+                value={sourceBranch}
+                onChange={(e) => setSourceBranch(e.target.value)}
+              />
+            </Box>
+          </Box>
+
+          <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#5f6368', fontWeight: 600 }}>BUILD CONFIGURATION (JSON)</Typography>
           <TextField 
             multiline 
             rows={6} 
@@ -159,7 +199,16 @@ export default function CloudBuildDrawer({ open, onClose }: Props) {
                       </IconButton>
                       <ListItemText 
                         primary={<Typography sx={{ fontWeight: 600, fontSize: '0.9rem' }}>{b.id}</Typography>}
-                        secondary={`Created: ${new Date(b.createTime).toLocaleString()}`}
+                        secondary={
+                          <Box>
+                            <Typography variant="caption" sx={{ display: 'block' }}>Created: {new Date(b.createTime).toLocaleString()}</Typography>
+                            {b.source && (
+                              <Typography variant="caption" sx={{ color: '#1a73e8', fontWeight: 600 }}>
+                                Source: {b.source.repoSource.repoName} ({b.source.repoSource.branchName})
+                              </Typography>
+                            )}
+                          </Box>
+                        }
                       />
                       <Chip 
                         size="small" 
