@@ -182,5 +182,41 @@ minisky start</code></pre>
         </div>
     </footer>
 
+    <script>
+        // OS Detection and Automatic Download Link Update
+        document.addEventListener('DOMContentLoaded', () => {
+            const downloadBtn = document.querySelector('.btn-primary');
+            const userAgent = window.navigator.userAgent;
+            const platform = window.navigator.platform;
+            const macosPlatforms = ['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'];
+            const windowsPlatforms = ['Win32', 'Win64', 'Windows', 'WinCE'];
+            
+            let os = null;
+
+            if (macosPlatforms.indexOf(platform) !== -1) {
+                os = 'mac';
+            } else if (windowsPlatforms.indexOf(platform) !== -1) {
+                os = 'windows';
+            } else if (!os && /Linux/.test(platform)) {
+                os = 'linux';
+            }
+
+            // Update button if Windows is detected
+            if (os === 'windows' && downloadBtn) {
+                // Link directly to the latest GitHub release zip
+                downloadBtn.href = "https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip";
+                downloadBtn.innerHTML = "Download for Windows (.zip)";
+                
+                // Add a small hint below
+                const hint = document.createElement('p');
+                hint.style.fontSize = '12px';
+                hint.style.marginTop = '8px';
+                hint.style.opacity = '0.7';
+                hint.innerText = "Extract and run minisky.exe";
+                downloadBtn.parentNode.appendChild(hint);
+            }
+        });
+    </script>
+
 </body>
 </html>
