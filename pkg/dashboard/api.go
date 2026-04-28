@@ -103,6 +103,7 @@ func NewAPIHandler(
 	mux.Handle("/api/manage/appengine/", api.handleManageAppEngine())
 	mux.Handle("/api/manage/memorystore/", api.handleManageMemorystore())
 	mux.Handle("/api/manage/scheduler/", api.handleManageScheduler())
+	mux.Handle("/api/manage/cloudkms/", api.handleManageCloudKms())
 	return mux
 }
 
@@ -207,6 +208,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "scheduler", Name: "cloud-scheduler", Label: "Cloud Scheduler", Status: "RUNNING", Port: nil, Description: "Managed cron job service for triggering HTTP/PubSub endpoints"},
 		{ID: "secretmanager", Name: "secret-manager", Label: "Secret Manager", Status: "RUNNING", Port: nil, Description: "Secure storage for sensitive information with versioning and audit logs"},
 		{ID: "cloudtasks", Name: "cloud-tasks", Label: "Cloud Tasks", Status: "RUNNING", Port: nil, Description: "Managed task execution and delivery service"},
+		{ID: "cloudkms", Name: "cloud-kms", Label: "Cloud KMS", Status: "RUNNING", Port: nil, Description: "AES-256-GCM key management and encrypt/decrypt operations"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -240,6 +242,7 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 		"firebase-hosting": "firebasehosting.googleapis.com",
 		"memorystore": "redis.googleapis.com",
 		"cloudtasks": "cloudtasks.googleapis.com",
+		"cloudkms":   "cloudkms.googleapis.com",
 	}
 
 	if action == "start" {
@@ -634,6 +637,23 @@ func (api *API) handleManageCloudTasks() http.Handler {
 		req.URL.Path = "/v2" + path
 		req.Host = "cloudtasks.googleapis.com"
 		log.Printf("[UI/API Proxy DEBUG] %s Cloud Tasks %s", req.Method, req.URL.Path)
+	}
+	return proxy
+}
+
+func (api *API) handleManageCloudKms() http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDir := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDir(req)
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/cloudkms")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		req.URL.Path = "/v1" + path
+		req.Host = "cloudkms.googleapis.com"
+		log.Printf("[UI/API Proxy] Cloud KMS → %s", req.URL.Path)
 	}
 	return proxy
 }

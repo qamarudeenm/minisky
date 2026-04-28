@@ -8,6 +8,7 @@ import (
 	_ "minisky/pkg/shims/bigquery"
 	_ "minisky/pkg/shims/bigtable"
 	_ "minisky/pkg/shims/cloudsql"
+	_ "minisky/pkg/shims/cloudkms"
 	_ "minisky/pkg/shims/cloudtasks"
 	_ "minisky/pkg/shims/compute"
 	_ "minisky/pkg/shims/dataproc"

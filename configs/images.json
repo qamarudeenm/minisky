@@ -72,6 +72,12 @@
         "FIREBASE_HOSTING_EMULATOR_HOST=0.0.0.0:5000",
         "GOOGLE_CLOUD_PROJECT=minisky-project"
       ]
+    },
+    "cloudkms.googleapis.com": {
+      "name": "minisky-kms",
+      "image": "winor30/fake-cloud-kms:latest",
+      "port": "9010/tcp",
+      "cmd": []
     }
   },
   "compute": {
