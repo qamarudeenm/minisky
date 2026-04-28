@@ -16,6 +16,7 @@ type ImageRegistry struct {
 	Dataproc   DataprocConfig           `json:"dataproc"`
 	Memorystore MemorystoreConfig       `json:"memorystore"`
 	CloudBuild  CloudBuildConfig        `json:"cloudbuild"`
+	ArtifactRegistry ArtifactRegistryConfig `json:"artifact_registry"`
 }
 
 type EmulatorConfig struct {
@@ -84,6 +85,12 @@ type MemoryVersion struct {
 
 type CloudBuildConfig struct {
 	DefaultBuilder string `json:"default_builder"`
+}
+
+type ArtifactRegistryConfig struct {
+	Image  string `json:"image"`
+	Port   string `json:"port"`
+	Domain string `json:"domain"`
 }
 
 var (

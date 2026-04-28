@@ -151,5 +151,10 @@
   },
   "cloudbuild": {
     "default_builder": "ubuntu:26.04"
+  },
+  "artifact_registry": {
+    "image": "registry:2",
+    "port": "5000/tcp",
+    "domain": "artifactregistry.googleapis.com"
   }
 }

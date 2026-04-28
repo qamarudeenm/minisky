@@ -5,10 +5,12 @@ import CloudTasksPageContent from './CloudTasksPageContent';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import BuildIcon from '@mui/icons-material/Build';
+import StorageIcon from '@mui/icons-material/Storage';
 import { useServices } from '../hooks/useServices';
 import ServiceCard from './ServiceCard';
 import CloudBuildDrawer from './CloudBuildDrawer';
 import { useProjectContext } from '../contexts/ProjectContext';
+import ArtifactRegistryDrawer from './ArtifactRegistryDrawer';
 
 export default function TasksAndSchedulingPage() {
   const [tab, setTab] = useState(0);
@@ -18,8 +20,10 @@ export default function TasksAndSchedulingPage() {
   } = useServices();
   
   const [buildDrawerOpen, setBuildDrawerOpen] = useState(false);
+  const [artifactDrawerOpen, setArtifactDrawerOpen] = useState(false);
 
   const buildService = services.find(s => s.id === 'cloudbuild');
+  const artifactService = services.find(s => s.id === 'artifactregistry');
 
   return (
     <Box>
@@ -50,6 +54,7 @@ export default function TasksAndSchedulingPage() {
           <Tab icon={<RocketLaunchIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Cloud Tasks" />
           <Tab icon={<ScheduleIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Cloud Scheduler" />
           <Tab icon={<BuildIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Cloud Build" />
+          <Tab icon={<StorageIcon sx={{ fontSize: '1.2rem', mr: 1 }} />} iconPosition="start" label="Artifact Registry" />
         </Tabs>
 
         <Box sx={{ p: 4 }}>
@@ -69,9 +74,24 @@ export default function TasksAndSchedulingPage() {
               />
             </Box>
           )}
+          {tab === 3 && artifactService && (
+            <Box sx={{ maxWidth: 400 }}>
+              <ServiceCard 
+                service={artifactService} 
+                idx={0} 
+                settings={settings}
+                onStartContainer={(id) => handleStartContainer(id, activeProject)}
+                onStopContainer={handleStopContainer}
+                onToggleSetting={toggleSetting}
+                onManage={() => setArtifactDrawerOpen(true)}
+                onInstallDependency={handleInstallDependency}
+              />
+            </Box>
+          )}
         </Box>
       </Paper>
       <CloudBuildDrawer open={buildDrawerOpen} onClose={() => setBuildDrawerOpen(false)} />
+      <ArtifactRegistryDrawer open={artifactDrawerOpen} onClose={() => setArtifactDrawerOpen(false)} />
     </Box>
   );
 }

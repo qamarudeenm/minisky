@@ -105,6 +105,7 @@ func NewAPIHandler(
 	mux.Handle("/api/manage/scheduler/", api.handleManageScheduler())
 	mux.Handle("/api/manage/cloudkms/", api.handleManageCloudKms())
 	mux.Handle("/api/manage/cloudbuild/", api.handleManageCloudBuild())
+	mux.Handle("/api/manage/artifactregistry/", api.handleManageArtifactRegistry())
 	return mux
 }
 
@@ -211,6 +212,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "cloudtasks", Name: "cloud-tasks", Label: "Cloud Tasks", Status: "RUNNING", Port: nil, Description: "Managed task execution and delivery service"},
 		{ID: "cloudkms", Name: "cloud-kms", Label: "Cloud KMS", Status: "RUNNING", Port: nil, Description: "AES-256-GCM key management and encrypt/decrypt operations"},
 		{ID: "cloudbuild", Name: "cloud-build", Label: "Cloud Build", Status: "RUNNING", Port: nil, Description: "Local CI/CD pipeline for executing multi-step build workflows"},
+		{ID: "artifactregistry", Name: "artifact-registry", Label: "Artifact Registry", Status: "RUNNING", Port: nil, Description: "Private Docker and package repository manager"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -246,6 +248,7 @@ func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {
 		"cloudtasks": "cloudtasks.googleapis.com",
 		"cloudkms":   "cloudkms.googleapis.com",
 		"cloudbuild": "cloudbuild.googleapis.com",
+		"artifactregistry": "artifactregistry.googleapis.com",
 	}
 
 	if action == "start" {
@@ -998,6 +1001,21 @@ func (api *API) handleManageMemorystore() http.Handler {
 	})
 }
 
+func (api *API) handleManageArtifactRegistry() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target, _ := url.Parse("http://localhost:8080")
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		origDir := proxy.Director
+		proxy.Director = func(req *http.Request) {
+			origDir(req)
+			path := strings.TrimPrefix(req.URL.Path, "/api/manage/artifactregistry")
+			req.URL.Path = "/v1" + path
+			req.Host = "artifactregistry.googleapis.com"
+			log.Printf("[UI/API Proxy] Artifact Registry → %s", req.URL.Path)
+		}
+		proxy.ServeHTTP(w, r)
+	})
+}
 
 func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

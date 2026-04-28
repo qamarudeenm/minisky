@@ -86,4 +86,4 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 MiniSky is released under the [MIT License](LICENSE).
 
-go build -o minisky ./cmd/minisky && ./minisky start
+cd ui && npm run build && cd .. && go build -o minisky ./cmd/minisky

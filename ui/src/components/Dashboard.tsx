@@ -20,6 +20,7 @@ import SchedulerManagerDrawer from './SchedulerManagerDrawer';
 import SecretManagerDrawer from './SecretManagerDrawer';
 import CloudTasksDrawer from './CloudTasksDrawer';
 import CloudKmsDrawer from './CloudKmsDrawer';
+import ArtifactRegistryDrawer from './ArtifactRegistryDrawer';
 import CloudBuildDrawer from './CloudBuildDrawer';
 
 export default function Dashboard() {
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [cloudTasksDrawerOpen, setCloudTasksDrawerOpen] = useState(false);
   const [cloudKmsDrawerOpen, setCloudKmsDrawerOpen] = useState(false);
   const [cloudBuildDrawerOpen, setCloudBuildDrawerOpen] = useState(false);
+  const [artifactRegistryDrawerOpen, setArtifactRegistryDrawerOpen] = useState(false);
 
   const serverlessService = services.find(s => s.id === 'serverless');
   const isBuildpacksEnabled = settings.MINISKY_SERVERLESS_BACKEND === 'buildpacks';
@@ -98,6 +100,7 @@ export default function Dashboard() {
                 if (id === 'cloudtasks') setCloudTasksDrawerOpen(true);
                 if (id === 'cloudkms') setCloudKmsDrawerOpen(true);
                 if (id === 'cloudbuild') setCloudBuildDrawerOpen(true);
+                if (id === 'artifactregistry') setArtifactRegistryDrawerOpen(true);
                 if (id === 'cloudfunctions' || id === 'serverless') setServerlessDrawerOpen(true);
               }}
               onInstallDependency={handleInstallDependency}
@@ -137,6 +140,7 @@ export default function Dashboard() {
       <CloudTasksDrawer open={cloudTasksDrawerOpen} onClose={() => setCloudTasksDrawerOpen(false)} />
       <CloudKmsDrawer open={cloudKmsDrawerOpen} onClose={() => setCloudKmsDrawerOpen(false)} />
       <CloudBuildDrawer open={cloudBuildDrawerOpen} onClose={() => setCloudBuildDrawerOpen(false)} />
+      <ArtifactRegistryDrawer open={artifactRegistryDrawerOpen} onClose={() => setArtifactRegistryDrawerOpen(false)} />
 
       <style>{`
         @keyframes fadeIn {
