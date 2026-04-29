@@ -34,6 +34,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"minisky/pkg/config"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -55,7 +56,7 @@ func NewDuckDBBackend() *DuckDBBackend {
 	enabled := strings.EqualFold(os.Getenv("MINISKY_BQ_BACKEND"), "duckdb")
 	dbPath := os.Getenv("MINISKY_DUCKDB_PATH")
 	if dbPath == "" {
-		dbPath = ".minisky/data/bigquery.duckdb"
+		dbPath = filepath.Join(config.GetMiniskyDir(), "data", "bigquery.duckdb")
 	}
 
 	b := &DuckDBBackend{enabled: enabled, dbPath: dbPath}
@@ -89,7 +90,7 @@ func (d *DuckDBBackend) SetEnabled(enabled bool) error {
 // Uncomment the sql.Open call once go-duckdb is added to go.mod.
 func (d *DuckDBBackend) init() error {
 	// Ensure the data directory exists
-	dir := ".minisky/data"
+	dir := filepath.Join(config.GetMiniskyDir(), "data")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("cannot create data directory: %w", err)
 	}

@@ -162,7 +162,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 
 	var gkeDeps []string
 	if !api.gkeBackend.Enabled() {
-		localKind := filepath.Join(".minisky", "bin", "kind")
+		localKind := filepath.Join(orchestrator.GetLocalBinPath(), orchestrator.GetKindBinaryName())
 		if _, err := os.Stat(localKind); err != nil {
 			if _, err := exec.LookPath("kind"); err != nil {
 				gkeDeps = []string{"kind"}
@@ -173,7 +173,7 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 	var servDeps []string
 	if !api.servBackend.Enabled() {
 		binName := orchestrator.GetPackBinaryName()
-		localPack := filepath.Join(".minisky", "bin", binName)
+		localPack := filepath.Join(orchestrator.GetLocalBinPath(), binName)
 		if _, err := os.Stat(localPack); err != nil {
 			if _, err := exec.LookPath(binName); err != nil {
 				servDeps = []string{"pack"}

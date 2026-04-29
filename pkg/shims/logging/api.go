@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"minisky/pkg/config"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -51,7 +53,8 @@ func NewAPI() *API {
 }
 
 func (api *API) load() {
-	f, err := os.Open(".minisky/cloud_logs.json")
+	path := filepath.Join(config.GetMiniskyDir(), "cloud_logs.json")
+	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
@@ -62,7 +65,9 @@ func (api *API) load() {
 
 func (api *API) save() {
 	data, _ := json.Marshal(api.entries)
-	os.WriteFile(".minisky/cloud_logs.json", data, 0644)
+	path := filepath.Join(config.GetMiniskyDir(), "cloud_logs.json")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	os.WriteFile(path, data, 0644)
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {

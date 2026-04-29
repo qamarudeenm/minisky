@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"minisky/pkg/config"
 	"net/http"
 	"os"
 	"os/exec"
@@ -76,8 +77,8 @@ func (sm *ServiceManager) InstallDependency(id string) error {
 		return fmt.Errorf("unsupported dependency: %s", id)
 	}
 
-	// 1. Create .minisky/bin if it doesn't exist
-	binDir := filepath.Join(".minisky", "bin")
+	// 1. Create GetMiniskyDir()/bin if it doesn't exist
+	binDir := filepath.Join(config.GetMiniskyDir(), "bin")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return fmt.Errorf("failed to create bin directory: %v", err)
 	}
@@ -144,8 +145,7 @@ func (sm *ServiceManager) InstallDependency(id string) error {
 
 // GetLocalBinPath returns the absolute path to the local .minisky/bin folder.
 func GetLocalBinPath() string {
-	cwd, _ := os.Getwd()
-	return filepath.Join(cwd, ".minisky", "bin")
+	return filepath.Join(config.GetMiniskyDir(), "bin")
 }
 
 // GetKindBinaryName returns "kind" or "kind.exe" depending on the OS.

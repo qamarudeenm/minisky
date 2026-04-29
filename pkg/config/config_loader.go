@@ -4,8 +4,19 @@ import (
 	_ "embed"
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 )
+
+// GetMiniskyDir returns the absolute path to the global .minisky directory (typically ~/.minisky)
+func GetMiniskyDir() string {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(home, ".minisky")
+	}
+	return ".minisky"
+}
 
 //go:embed images.json
 var embeddedImagesJSON []byte

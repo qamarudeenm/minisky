@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"minisky/pkg/config"
 	"minisky/pkg/orchestrator"
 	"minisky/pkg/registry"
 )
@@ -220,7 +221,7 @@ func (api *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	uploadDir := ".minisky/uploads"
+	uploadDir := filepath.Join(config.GetMiniskyDir(), "uploads")
 	os.MkdirAll(uploadDir, 0755)
 
 	destPath := filepath.Join(uploadDir, handler.Filename)

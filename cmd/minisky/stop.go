@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"minisky/pkg/config"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,7 +17,7 @@ var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stops the MiniSky Daemon",
 	Run: func(cmd *cobra.Command, args []string) {
-		pidFile := ".minisky/minisky.pid"
+		pidFile := filepath.Join(config.GetMiniskyDir(), "minisky.pid")
 		data, err := os.ReadFile(pidFile)
 		if err != nil {
 			log.Fatalf("MiniSky is not running (PID file missing: %s)", pidFile)

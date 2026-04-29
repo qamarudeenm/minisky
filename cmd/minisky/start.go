@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
+	"minisky/pkg/config"
 	"minisky/pkg/orchestrator"
 	"minisky/pkg/registry"
 	"minisky/pkg/router"
@@ -41,8 +43,28 @@ var startCmd = &cobra.Command{
 			os.Setenv("DOCKER_API_VERSION", "1.44"); 
 		}
 		
+		// Ensure the directory exists
+		miniskyDir := config.GetMiniskyDir()
+
+		// Migration step: move legacy local .minisky to global home directory
+		if stat, err := os.Stat(".minisky"); err == nil && stat.IsDir() {
+			absLocal, _ := filepath.Abs(".minisky")
+			if absLocal != miniskyDir {
+				if _, err := os.Stat(miniskyDir); os.IsNotExist(err) {
+					log.Printf("📦 Found legacy local .minisky directory. Migrating data to %s...", miniskyDir)
+					if err := os.Rename(".minisky", miniskyDir); err != nil {
+						log.Printf("⚠️ Failed to migrate .minisky: %v", err)
+					}
+				} else {
+					log.Printf("⚠️ Notice: A local '.minisky' folder exists here but global '%s' is already in use. Local data will be ignored.", miniskyDir)
+				}
+			}
+		}
+
+		os.MkdirAll(miniskyDir, 0755)
+
 		// Write PID file
-		pidFile := ".minisky/minisky.pid"
+		pidFile := filepath.Join(miniskyDir, "minisky.pid")
 		if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
 			log.Printf("[WARN] Failed to write PID file: %v", err)
 		}
@@ -95,7 +117,7 @@ var startCmd = &cobra.Command{
 			<-quit
 			log.Println("⏹️  MiniSky shutting down — tearing down isolated network...")
 			svcMgr.Teardown(context.Background())
-			os.Remove(".minisky/minisky.pid")
+			os.Remove(pidFile)
 			os.Exit(0)
 		}()
 
