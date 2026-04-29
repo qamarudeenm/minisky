@@ -29,20 +29,35 @@ MiniSky requires the following tools installed and running on your local machine
 ## 🚀 Quick Start
 
 ### Installation
+
 **Linux & macOS:**
 ```bash
 curl -sSL https://minisky.bmics.com.ng/install.sh | sh
 ```
 
-**Windows:**
-MiniSky is distributed via [Scoop](https://scoop.sh/). If you don't have Scoop installed, run this first in PowerShell:
+**Windows — Direct Download (Recommended):**
+
+Download the self-contained `minisky.exe` from the [latest GitHub release](https://github.com/qamarudeenm/minisky/releases/latest). No installer needed — just extract and run:
+
 ```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+# Download and extract
+Invoke-WebRequest -Uri https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip -OutFile minisky.zip
+Expand-Archive minisky.zip -DestinationPath C:\minisky
+
+# Run
+C:\minisky\minisky.exe start
 ```
 
-Then, install MiniSky:
+> MiniSky stores all data in `%USERPROFILE%\.minisky\` — never in your working directory.
+
+**Windows — Scoop (Alternative):**
+
 ```powershell
+# Install Scoop if not already installed
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+# Install MiniSky
 scoop bucket add minisky https://github.com/qamarudeenm/scoop-bucket
 scoop install minisky
 ```
@@ -53,6 +68,12 @@ minisky start
 ```
 - **API Gateway**: `http://localhost:8080`
 - **Dashboard**: `http://localhost:8081`
+
+### Uninstall
+```bash
+minisky uninstall
+```
+This removes all containers, networks, and data from `~/.minisky`. Then delete the binary to fully uninstall.
 
 ## 📖 Documentation
 
@@ -85,5 +106,3 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## 📄 License
 
 MiniSky is released under the [MIT License](LICENSE).
-
-cd ui && npm run build && cd .. && go build -o minisky ./cmd/minisky

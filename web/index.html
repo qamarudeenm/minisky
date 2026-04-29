@@ -118,8 +118,10 @@ provider "google" {
                     <span class="text-muted">Starts the daemon and API router</span></p>
                     <p style="margin-bottom: 12px;"><code>minisky stop</code><br>
                     <span class="text-muted">Stops the MiniSky daemon</span></p>
-                    <p><code>minisky restart</code><br>
+                    <p style="margin-bottom: 12px;"><code>minisky restart</code><br>
                     <span class="text-muted">Restarts the daemon</span></p>
+                    <p><code>minisky uninstall</code><br>
+                    <span class="text-muted">Removes all data, containers, and binaries</span></p>
                 </div>
                 <div class="value-card">
                     <h3>Resource Management</h3>
@@ -145,33 +147,88 @@ provider "google" {
 
     <!-- Section 4: Installation -->
     <section id="install" class="section-install section-white">
-        <div class="container install-container">
-            <div class="install-text">
-                <h2 class="section-title">Start building in seconds.</h2>
-                <p><strong>Prerequisites:</strong> Ensure <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop</a> and <a href="https://git-scm.com/downloads" target="_blank">Git</a> are installed.</p>
-                <p>MiniSky acts as a drop-in replacement. Simply install the lightweight Go binary, start the server, and your standard GCP libraries will connect automatically.</p>
-                
-                <h4 style="margin-top: 20px;">Windows (Scoop)</h4>
-                <p>If you don't have Scoop, install it via PowerShell:</p>
-                <pre style="background: #f4f4f4; padding: 10px; border-radius: 4px; font-size: 13px;"><code>Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-irm https://get.scoop.sh | iex</code></pre>
-            </div>
-            <div class="install-code">
-                <div class="code-header">
-                    <span class="dot red"></span>
-                    <span class="dot yellow"></span>
-                    <span class="dot green"></span>
-                    <span class="terminal-title">Installation</span>
-                </div>
-                <pre><code><span class="comment"># Linux / macOS</span>
-<span class="command">curl</span> -sSL https://minisky.bmics.com.ng/install.sh | <span class="command">bash</span>
+        <div class="container">
+            <h2 class="section-title text-center">Start building in seconds.</h2>
+            <p class="text-center" style="margin-bottom: 32px;">
+                <strong>Prerequisites:</strong> Ensure <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop</a> is installed and running.
+            </p>
 
-<span class="comment"># Windows (after Scoop is ready)</span>
-<span class="command">scoop</span> bucket add minisky https://github.com/qamarudeenm/scoop-bucket
-<span class="command">scoop</span> install minisky
+            <!-- OS Tabs -->
+            <div class="install-tabs" id="install-tabs">
+                <button class="tab-btn active" data-os="linux" onclick="switchTab('linux')">🐧 Linux / macOS</button>
+                <button class="tab-btn" data-os="windows" onclick="switchTab('windows')">🪟 Windows</button>
+            </div>
+
+            <!-- Linux / macOS -->
+            <div class="tab-panel" id="tab-linux">
+                <div class="install-container">
+                    <div class="install-text">
+                        <h3>One-line Install</h3>
+                        <p>Run the installer script. It will download the latest MiniSky binary and add it to your <code>PATH</code> automatically.</p>
+                        <p style="margin-top: 16px;">Then start the emulator:</p>
+                        <pre style="background:#f4f4f4;padding:10px;border-radius:6px;font-size:13px;"><code>minisky start</code></pre>
+                        <ul style="margin-top:16px; padding-left:20px; color:#555;">
+                            <li>API Gateway: <code>http://localhost:8080</code></li>
+                            <li>Dashboard: <code>http://localhost:8081</code></li>
+                        </ul>
+                    </div>
+                    <div class="install-code">
+                        <div class="code-header">
+                            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+                            <span class="terminal-title">Terminal</span>
+                        </div>
+                        <pre><code><span class="comment"># Install MiniSky</span>
+<span class="command">curl</span> -sSL https://minisky.bmics.com.ng/install.sh | <span class="command">bash</span>
 
 <span class="comment"># Start the emulator</span>
 minisky start</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Windows -->
+            <div class="tab-panel" id="tab-windows" style="display:none;">
+                <div class="install-container">
+                    <div class="install-text">
+                        <h3>Direct Download (Recommended)</h3>
+                        <p>Download the self-contained <code>.exe</code> binary directly — no package manager required.</p>
+                        <ol style="padding-left:20px; margin-top:12px; color:#555; line-height:2;">
+                            <li>Click <strong>Download minisky.exe</strong> below.</li>
+                            <li>Place <code>minisky.exe</code> anywhere on your machine (e.g., <code>C:\minisky\</code>).</li>
+                            <li>Open <strong>PowerShell</strong> or <strong>Command Prompt</strong> and run:</li>
+                        </ol>
+                        <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:13px;margin-top:8px;"><code>.\minisky.exe start</code></pre>
+                        <p style="margin-top: 12px;">MiniSky will store all data in <code>%USERPROFILE%\.minisky\</code>. To fully uninstall, run:</p>
+                        <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:13px;"><code>.\minisky.exe uninstall</code></pre>
+                        <div style="margin-top:24px;">
+                            <a id="windows-download-btn" href="https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip" class="btn btn-primary" style="display:inline-block;">⬇️ Download minisky.exe</a>
+                            <p style="font-size:12px; color:#777; margin-top:8px;">v1.0.3 · Windows 10/11 · 64-bit · No installer needed</p>
+                        </div>
+                        <hr style="margin:24px 0; border:none; border-top:1px solid #eee;">
+                        <h4>Alternative: Scoop Package Manager</h4>
+                        <p style="color:#555;">If you prefer a package manager, you can also install via <a href="https://scoop.sh" target="_blank">Scoop</a>:</p>
+                        <pre style="background:#f4f4f4;padding:10px;border-radius:6px;font-size:13px;"><code>scoop bucket add minisky https://github.com/qamarudeenm/scoop-bucket
+scoop install minisky</code></pre>
+                    </div>
+                    <div class="install-code">
+                        <div class="code-header">
+                            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+                            <span class="terminal-title">PowerShell</span>
+                        </div>
+                        <pre><code><span class="comment"># 1. Download the binary</span>
+<span class="comment">#    (or use the button on the left)</span>
+<span class="command">Invoke-WebRequest</span> `
+  -Uri https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip `
+  -OutFile minisky.zip
+<span class="command">Expand-Archive</span> minisky.zip -DestinationPath C:\minisky
+
+<span class="comment"># 2. Start the emulator</span>
+C:\minisky\minisky.exe start
+
+<span class="comment"># 3. Access the Dashboard</span>
+<span class="comment">#    http://localhost:8081</span></code></pre>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -183,37 +240,40 @@ minisky start</code></pre>
     </footer>
 
     <script>
-        // OS Detection and Automatic Download Link Update
+        function switchTab(os) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.style.display = 'none');
+            document.querySelector('[data-os="' + os + '"]').classList.add('active');
+            document.getElementById('tab-' + os).style.display = 'block';
+        }
+
+        // OS Detection
         document.addEventListener('DOMContentLoaded', () => {
             const downloadBtn = document.querySelector('.btn-primary');
-            const userAgent = window.navigator.userAgent;
             const platform = window.navigator.platform;
-            const macosPlatforms = ['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'];
             const windowsPlatforms = ['Win32', 'Win64', 'Windows', 'WinCE'];
-            
-            let os = null;
 
-            if (macosPlatforms.indexOf(platform) !== -1) {
-                os = 'mac';
-            } else if (windowsPlatforms.indexOf(platform) !== -1) {
+            let os = 'linux';
+            if (windowsPlatforms.indexOf(platform) !== -1) {
                 os = 'windows';
-            } else if (!os && /Linux/.test(platform)) {
-                os = 'linux';
+            } else if (['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'].indexOf(platform) !== -1) {
+                os = 'linux'; // same tab for macOS
             }
 
-            // Update button if Windows is detected
+            // Auto-switch to detected OS tab
+            switchTab(os);
+
+            // Update hero download button based on OS
             if (os === 'windows' && downloadBtn) {
-                // Link directly to the latest GitHub release zip
                 downloadBtn.href = "https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip";
-                downloadBtn.innerHTML = "Download for Windows (.zip)";
-                
-                // Add a small hint below
+                downloadBtn.innerHTML = "⬇️ Download for Windows";
                 const hint = document.createElement('p');
-                hint.style.fontSize = '12px';
-                hint.style.marginTop = '8px';
-                hint.style.opacity = '0.7';
-                hint.innerText = "Extract and run minisky.exe";
+                hint.style.cssText = 'font-size:12px;margin-top:8px;opacity:0.7;';
+                hint.innerText = "Extract zip and run minisky.exe";
                 downloadBtn.parentNode.appendChild(hint);
+            } else if (downloadBtn) {
+                downloadBtn.href = "#install";
+                downloadBtn.innerHTML = "Get Started";
             }
         });
     </script>
