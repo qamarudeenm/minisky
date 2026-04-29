@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -158,13 +159,17 @@ func (d *DuckDBBackend) LoadData(project, dataset, table, sourceURI, format stri
 	
 	var query string
 	format = strings.ToUpper(format)
+	
+	// Convert Windows path separators to forward slashes to prevent SQL escape sequence errors
+	safeURI := filepath.ToSlash(sourceURI)
+
 	switch format {
 	case "CSV":
-		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_csv_auto('%s')", tableName, sourceURI)
+		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_csv_auto('%s')", tableName, safeURI)
 	case "JSON", "NEWLINE_DELIMITED_JSON":
-		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_json_auto('%s')", tableName, sourceURI)
+		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_json_auto('%s')", tableName, safeURI)
 	case "PARQUET":
-		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_parquet('%s')", tableName, sourceURI)
+		query = fmt.Sprintf("CREATE OR REPLACE TABLE \"%s\" AS SELECT * FROM read_parquet('%s')", tableName, safeURI)
 	default:
 		return fmt.Errorf("unsupported format for DuckDB load: %s", format)
 	}
