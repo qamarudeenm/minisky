@@ -5,6 +5,17 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-04-29
+
+### Added
+- **Global Uninstall Command**: Added an `uninstall` CLI command (`minisky uninstall`) to gracefully stop the daemon, prune all `minisky-*` Docker containers/networks, and delete the data directory.
+- **Centralized Data Storage**: Moved the `.minisky` state directory from the local working directory to the global user home directory (e.g., `~/.minisky` or `C:\Users\Username\.minisky`). Includes an automatic, zero-data-loss migration for legacy local directories on startup.
+
+### Fixed
+- **Missing Dropdown Options**: Embedded `images.json` configuration directly into the compiled Go binary using `//go:embed` to resolve an issue where Compute and Dataproc dropdown menus were empty on Windows deployments.
+- **Container Volume Failures on Windows**: Refactored Docker volume binding logic in the Orchestrator to correctly parse absolute Windows host paths (e.g., `C:\path`), preventing container initialization failures.
+- **BigQuery CSV Uploads on Windows**: Sanitized local file paths before SQL injection (converting backslashes to forward slashes) to prevent DuckDB from evaluating Windows paths as invalid SQL escape sequences.
+
 ## [1.0.2] - 2026-04-28
 
 ### Added
@@ -48,5 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Single Binary**: Fully self-contained architecture for maximum portability.
 
 ---
+[1.0.3]: https://github.com/qamarudeenm/minisky/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/qamarudeenm/minisky/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/qamarudeenm/minisky/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/qamarudeenm/minisky/releases/tag/v1.0.0
