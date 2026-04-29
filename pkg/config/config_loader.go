@@ -1,12 +1,14 @@
 package config
 
 import (
+	_ "embed"
 	"encoding/json"
 	"log"
-	"os"
-	"path/filepath"
 	"sync"
 )
+
+//go:embed images.json
+var embeddedImagesJSON []byte
 
 type ImageRegistry struct {
 	Emulators map[string]EmulatorConfig `json:"emulators"`
@@ -106,7 +108,6 @@ var (
 )
 
 // GetImageRegistry returns the global image configuration.
-// It lazily loads from configs/images.json on first call.
 func GetImageRegistry() *ImageRegistry {
 	once.Do(func() {
 		registry = loadRegistry()
@@ -115,35 +116,13 @@ func GetImageRegistry() *ImageRegistry {
 }
 
 func loadRegistry() *ImageRegistry {
-	// Try to find the config file relative to the project root
-	paths := []string{
-		"configs/images.json",
-		"../configs/images.json",
-		"../../configs/images.json",
-	}
-
-	var data []byte
-	var err error
-	for _, p := range paths {
-		abs, _ := filepath.Abs(p)
-		data, err = os.ReadFile(abs)
-		if err == nil {
-			log.Printf("[Config] Loaded image registry from %s", abs)
-			break
-		}
-	}
-
-	if err != nil {
-		log.Printf("[Config] WARNING: Could not load images.json, using minimal defaults: %v", err)
-		return fallbackRegistry()
-	}
-
 	var r ImageRegistry
-	if err := json.Unmarshal(data, &r); err != nil {
-		log.Printf("[Config] ERROR: Failed to parse images.json: %v", err)
+	if err := json.Unmarshal(embeddedImagesJSON, &r); err != nil {
+		log.Printf("[Config] ERROR: Failed to parse embedded images.json: %v", err)
 		return fallbackRegistry()
 	}
 
+	log.Printf("[Config] Successfully loaded embedded image registry")
 	return &r
 }
 

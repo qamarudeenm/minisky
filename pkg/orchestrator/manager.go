@@ -924,11 +924,15 @@ func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 	}
 	if c.Volume != "" {
 		vol := c.Volume
-		if strings.Contains(vol, ":") {
-			parts := strings.SplitN(vol, ":", 2)
-			if !filepath.IsAbs(parts[0]) {
-				if abs, err := filepath.Abs(parts[0]); err == nil {
-					vol = abs + ":" + parts[1]
+		lastColon := strings.LastIndex(vol, ":")
+		if lastColon > 0 {
+			hostPath := vol[:lastColon]
+			containerPath := vol[lastColon+1:]
+			if strings.ContainsAny(hostPath, `/\`) || hostPath == "." || hostPath == ".." {
+				if !filepath.IsAbs(hostPath) {
+					if abs, err := filepath.Abs(hostPath); err == nil {
+						vol = abs + ":" + containerPath
+					}
 				}
 			}
 		}
