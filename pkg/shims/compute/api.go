@@ -42,6 +42,53 @@ type Instance struct {
 	// internal tracking only
 	project string
 	zone    string
+	Fingerprint string `json:"fingerprint"`
+	LabelFingerprint  string            `json:"labelFingerprint"`
+	Scheduling        *Scheduling       `json:"scheduling,omitempty"`
+	CanIpForward      bool              `json:"canIpForward"`
+}
+
+func (i *Instance) DeepCopy() *Instance {
+	newInst := *i
+	if i.Labels != nil {
+		newInst.Labels = make(map[string]string)
+		for k, v := range i.Labels {
+			newInst.Labels[k] = v
+		}
+	}
+	if i.Metadata != nil {
+		newInst.Metadata = &InstanceMetadata{
+			Kind: i.Metadata.Kind,
+		}
+		newInst.Metadata.Items = append([]MetadataItem{}, i.Metadata.Items...)
+	}
+	if i.NetworkInterfaces != nil {
+		newInst.NetworkInterfaces = make([]NetworkInterface, len(i.NetworkInterfaces))
+		copy(newInst.NetworkInterfaces, i.NetworkInterfaces)
+		for j := range newInst.NetworkInterfaces {
+			if newInst.NetworkInterfaces[j].AccessConfigs != nil {
+				newInst.NetworkInterfaces[j].AccessConfigs = append([]AccessConfig{}, newInst.NetworkInterfaces[j].AccessConfigs...)
+			}
+		}
+	}
+	if i.Disks != nil {
+		newInst.Disks = make([]AttachedDisk, len(i.Disks))
+		copy(newInst.Disks, i.Disks)
+	}
+	if i.HostPorts != nil {
+		newInst.HostPorts = append([]orchestrator.PortMapping{}, i.HostPorts...)
+	}
+	if i.Scheduling != nil {
+		s := *i.Scheduling
+		newInst.Scheduling = &s
+	}
+	return &newInst
+}
+
+type Scheduling struct {
+	OnHostMaintenance string `json:"onHostMaintenance"`
+	AutomaticRestart  bool   `json:"automaticRestart"`
+	Preemptible       bool   `json:"preemptible"`
 }
 
 type InstanceMetadata struct {
@@ -174,6 +221,32 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 // Top-level routing
 // ─────────────────────────────────────────────────────────────────────────────
 
+func (api *API) ListProjects() []string {
+	api.mu.RLock()
+	defer api.mu.RUnlock()
+	
+	projects := make(map[string]bool)
+	for _, inst := range api.instances {
+		if inst.project != "" {
+			projects[inst.project] = true
+		}
+	}
+	for k := range api.networks {
+		p := strings.Split(k, ":")[0]
+		projects[p] = true
+	}
+	for k := range api.firewalls {
+		p := strings.Split(k, ":")[0]
+		projects[p] = true
+	}
+	
+	res := []string{}
+	for p := range projects {
+		res = append(res, p)
+	}
+	return res
+}
+
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[Shim: Compute Engine] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
@@ -185,6 +258,8 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		api.routeInstances(w, r, path)
 	case strings.Contains(path, "/operations/"):
 		api.routeOperations(w, r, path)
+	case strings.Contains(path, "/zones/") && !strings.Contains(path, "/instances"):
+		api.routeZones(w, r, path)
 	case strings.Contains(path, "/global/networks"):
 		api.routeNetworks(w, r, path)
 	case strings.Contains(path, "/global/firewalls"):
@@ -196,6 +271,8 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.Contains(path, "/global/forwardingRules") ||
 		strings.Contains(path, "/global/targetHttpProxies"):
 		api.routeLoadBalancer(w, r, path)
+	case strings.Contains(path, "/global/images"):
+		api.routeImages(w, r, path)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, 404, "NOT_FOUND", "Compute resource not found: "+path)
@@ -320,6 +397,23 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 		CreationTimestamp: time.Now().UTC().Format(time.RFC3339),
 		project:           project,
 		zone:              zone,
+		Fingerprint:       "minisky-mock-fingerprint",
+		LabelFingerprint:  "minisky-label-fingerprint",
+		Scheduling: &Scheduling{
+			OnHostMaintenance: "MIGRATE",
+			AutomaticRestart:  true,
+			Preemptible:       false,
+		},
+		CanIpForward: false,
+	}
+
+	if inst.Metadata == nil {
+		inst.Metadata = &InstanceMetadata{
+			Kind:  "compute#metadata",
+			Items: []MetadataItem{},
+		}
+	} else if inst.Metadata.Items == nil {
+		inst.Metadata.Items = []MetadataItem{}
 	}
 
 	key := instanceKey(project, zone, name)
@@ -416,26 +510,41 @@ func (api *API) getInstance(w http.ResponseWriter, r *http.Request, project, zon
 	key := instanceKey(project, zone, name)
 	api.mu.RLock()
 	inst, ok := api.instances[key]
-	api.mu.RUnlock()
 
 	if !ok {
+		api.mu.RUnlock()
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, 404, "NOT_FOUND", fmt.Sprintf("Instance '%s' not found in zone '%s'", name, zone))
 		return
 	}
 	
+	// Deep copy under lock to avoid racing with background updates
+	instCopy := inst.DeepCopy()
+	api.mu.RUnlock()
+
 	// Inject dynamic host ports from orchestrator
-	cName := "minisky-vm-" + inst.Name
-	if inst.Labels != nil && inst.Labels["managed-by"] == "gke" {
-		cName = inst.Name
+	cName := "minisky-vm-" + instCopy.Name
+	if instCopy.Labels != nil && instCopy.Labels["managed-by"] == "gke" {
+		cName = instCopy.Name
 	}
-	inst.HostPorts = api.svcMgr.GetVMPortMappings(cName)
-	if len(inst.NetworkInterfaces) > 0 {
-		inst.NetworkInterfaces[0].NetworkIP = api.svcMgr.GetContainerIP(cName)
+	instCopy.HostPorts = api.svcMgr.GetVMPortMappings(cName)
+	if len(instCopy.NetworkInterfaces) > 0 {
+		ip := api.svcMgr.GetContainerIP(cName)
+		if ip == "" {
+			ip = "10.128.0.2" // Fallback to avoid empty IP which can crash some providers
+		}
+		instCopy.NetworkInterfaces[0].NetworkIP = ip
+		if instCopy.NetworkInterfaces[0].Subnetwork == "" {
+			instCopy.NetworkInterfaces[0].Subnetwork = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/default", project, strings.Join(strings.Split(zone, "-")[:2], "-"))
+		}
+	}
+	
+	if instCopy.Fingerprint == "" {
+		instCopy.Fingerprint = "minisky-mock-fingerprint"
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(inst)
+	json.NewEncoder(w).Encode(instCopy)
 }
 
 func (api *API) listInstances(w http.ResponseWriter, r *http.Request, project, zone string) {
@@ -446,17 +555,20 @@ func (api *API) listInstances(w http.ResponseWriter, r *http.Request, project, z
 	items := []*Instance{}
 	for k, v := range api.instances {
 		if strings.HasPrefix(k, prefix) {
-			// Create a copy to inject dynamic port mappings safely
-			copyOfInst := *v
+			copyOfInst := v.DeepCopy()
 			cName := "minisky-vm-" + copyOfInst.Name
 			if copyOfInst.Labels != nil && copyOfInst.Labels["managed-by"] == "gke" {
 				cName = copyOfInst.Name
 			}
 			copyOfInst.HostPorts = api.svcMgr.GetVMPortMappings(cName)
 			if len(copyOfInst.NetworkInterfaces) > 0 {
-				copyOfInst.NetworkInterfaces[0].NetworkIP = api.svcMgr.GetContainerIP(cName)
+				ip := api.svcMgr.GetContainerIP(cName)
+				if ip == "" {
+					ip = "10.128.0.2"
+				}
+				copyOfInst.NetworkInterfaces[0].NetworkIP = ip
 			}
-			items = append(items, &copyOfInst)
+			items = append(items, copyOfInst)
 		}
 	}
 
@@ -525,6 +637,89 @@ func (api *API) instanceAction(w http.ResponseWriter, r *http.Request, project, 
 	api.opMgr.RunAsync(op.Name, func() error { return nil })
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(op)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zones
+// ─────────────────────────────────────────────────────────────────────────────
+
+// routeZones handles GET requests for zone resources, e.g. from Terraform's
+// zone-validation step before creating a Compute instance.
+func (api *API) routeZones(w http.ResponseWriter, r *http.Request, path string) {
+	project := extractProject(path)
+	zone := extractSegmentAfter(path, "zones")
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if zone == "" {
+		// List zones — return a minimal list of common zones.
+		zones := []map[string]interface{}{}
+		for _, z := range []string{"us-central1-a", "us-central1-b", "us-east1-b", "europe-west1-b"} {
+			zones = append(zones, map[string]interface{}{
+				"kind":     "compute#zone",
+				"id":       randomNumericID(),
+				"name":     z,
+				"status":   "UP",
+				"selfLink": fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/%s", project, z),
+				"region":   fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s", project, strings.Join(strings.Split(z, "-")[:2], "-")),
+			})
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"kind":  "compute#zoneList",
+			"items": zones,
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"kind":     "compute#zone",
+		"id":       randomNumericID(),
+		"name":     zone,
+		"status":   "UP",
+		"selfLink": fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/%s", project, zone),
+		"region":   fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s", project, strings.Join(strings.Split(zone, "-")[:2], "-")),
+	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Images
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (api *API) routeImages(w http.ResponseWriter, r *http.Request, path string) {
+	project := extractProject(path)
+	// Example path: /compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts
+	family := ""
+	if strings.Contains(path, "/family/") {
+		parts := strings.Split(path, "/family/")
+		family = parts[len(parts)-1]
+	}
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Return a synthetic image
+	imageName := family
+	if imageName == "" {
+		imageName = "minisky-mock-image"
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"kind":              "compute#image",
+		"id":                randomNumericID(),
+		"name":              imageName,
+		"status":            "READY",
+		"sourceType":        "RAW",
+		"selfLink":          fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/images/%s", project, imageName),
+		"creationTimestamp": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -604,6 +799,19 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 			api.mu.RLock()
 			n, ok := api.networks[key]
 			api.mu.RUnlock()
+			
+			if !ok && name == "default" {
+				// Return a virtual default network
+				n = &Network{
+					Kind: "compute#network",
+					ID: "0",
+					Name: "default",
+					SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
+					CreationTimestamp: "2024-01-01T00:00:00Z",
+				}
+				ok = true
+			}
+
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				writeError(w, 404, "NOT_FOUND", "Network "+name+" not found")
@@ -615,12 +823,27 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 			prefix := project + ":"
 			api.mu.RLock()
 			items := []*Network{}
+			hasDefault := false
 			for k, v := range api.networks {
 				if strings.HasPrefix(k, prefix) {
 					items = append(items, v)
+					if v.Name == "default" {
+						hasDefault = true
+					}
 				}
 			}
 			api.mu.RUnlock()
+			
+			if !hasDefault {
+				items = append(items, &Network{
+					Kind: "compute#network",
+					ID: "0",
+					Name: "default",
+					SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
+					CreationTimestamp: "2024-01-01T00:00:00Z",
+				})
+			}
+
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"kind":  "compute#networkList",

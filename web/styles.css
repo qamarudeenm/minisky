@@ -276,6 +276,59 @@ body {
     display: block;
 }
 
+/* Section: Video Showcase */
+.section-video {
+    padding: 120px 0;
+}
+
+.video-container {
+    max-width: 900px;
+    margin: 64px auto 0 auto;
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--apple-shadow);
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.video-container:hover {
+    transform: scale(1.02);
+}
+
+.video-placeholder {
+    width: 100%;
+    display: block;
+}
+
+.video-overlay {
+    position: relative;
+}
+
+.play-btn-pulse {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(66, 133, 244, 0.8);
+    border-radius: 50%;
+    padding: 20px;
+    box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 30px rgba(66, 133, 244, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(66, 133, 244, 0);
+    }
+}
+
 /* Section 4: Install */
 .section-install {
     padding: 120px 0;

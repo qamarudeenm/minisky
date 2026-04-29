@@ -18,6 +18,7 @@ import (
 	_ "minisky/pkg/shims" // Triggers all shim registrations
 	"minisky/pkg/shims/appengine"
 	"minisky/pkg/shims/bigquery"
+	"minisky/pkg/shims/compute"
 	"minisky/pkg/shims/gke"
 	"minisky/pkg/shims/logging"
 	"minisky/pkg/shims/memorystore"
@@ -109,6 +110,7 @@ var startCmd = &cobra.Command{
 		appEngineAPI := shims["appengine.googleapis.com"].(*appengine.API)
 		memoAPI := shims["redis.googleapis.com"].(*memorystore.API)
 		schedulerAPI := shims["cloudscheduler.googleapis.com"].(*scheduler.API)
+		computeAPI := shims["compute.googleapis.com"].(*compute.API)
 
 		// ── Graceful Shutdown ────────────────────────────────────────────────
 		go func() {
@@ -139,6 +141,7 @@ var startCmd = &cobra.Command{
 				appEngineAPI,
 				memoAPI,
 				schedulerAPI,
+				computeAPI,
 			)
 			uiMux.Handle("/api/", apiHandler)
 			// Fallback to static dist

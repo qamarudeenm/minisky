@@ -26,7 +26,7 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
 
   const loadBuckets = async () => {
     try {
-      const res = await fetch(`/api/manage/storage/projects/${activeProject}/b`);
+      const res = await fetch(`/api/manage/storage/b?project=${activeProject}`);
       if (res.ok) {
         const data = await res.json();
         setBuckets(data.items || []);
@@ -63,7 +63,7 @@ export default function StorageManagerDrawer({ open, onClose }: StorageManagerDr
 
   const handleCreateBucket = async () => {
     if (!newBucketName) return;
-    await fetch(`/api/manage/storage/projects/${activeProject}/b`, {
+    await fetch(`/api/manage/storage/b?project=${activeProject}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newBucketName })

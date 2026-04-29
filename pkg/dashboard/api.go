@@ -16,6 +16,7 @@ import (
 
 	"minisky/pkg/config"
 	"minisky/pkg/orchestrator"
+	"minisky/pkg/shims/compute"
 	"minisky/pkg/shims/appengine"
 	"minisky/pkg/shims/bigquery"
 	"minisky/pkg/shims/gke"
@@ -43,6 +44,7 @@ type API struct {
 	appEngineAPI  *appengine.API
 	memoAPI       *memorystore.API
 	schedulerAPI  *scheduler.API
+	computeAPI    *compute.API
 }
 
 func NewAPIHandler(
@@ -55,6 +57,7 @@ func NewAPIHandler(
 	appEngineAPI *appengine.API,
 	memoAPI *memorystore.API,
 	schedulerAPI *scheduler.API,
+	computeAPI *compute.API,
 ) http.Handler {
 	api := &API{
 		svcMgr:       svcMgr,
@@ -66,6 +69,7 @@ func NewAPIHandler(
 		appEngineAPI: appEngineAPI,
 		memoAPI:      memoAPI,
 		schedulerAPI: schedulerAPI,
+		computeAPI:   computeAPI,
 	}
 
 	mux := http.NewServeMux()
@@ -78,6 +82,7 @@ func NewAPIHandler(
 	mux.HandleFunc("/api/manage/system/reset-logs", api.handleResetLogs)
 	mux.HandleFunc("/api/manage/system/prune-containers", api.handlePruneContainers)
 	mux.HandleFunc("/api/system/info", api.handleSystemInfo)
+	mux.HandleFunc("/api/projects", api.handleProjects)
 
 	// Add reverse proxy for management APIs
 	mux.Handle("/api/manage/storage/", api.handleManageStorage())
@@ -219,6 +224,44 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(services)
+}
+
+func (api *API) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	projects := make(map[string]bool)
+	// Default projects that should always be there
+	projects["production"] = true
+	projects["local-dev-project"] = true
+
+	// Ask the shims — we don't have a direct link to all shims here, 
+	// but we can add them to the API struct or use the registry.
+	// Actually, let's just use the ones we have in the API struct.
+	
+	// Logging
+	if api.logAPI != nil {
+		for _, p := range api.logAPI.ListProjects() {
+			projects[p] = true
+		}
+	}
+	
+	// Compute
+	if api.computeAPI != nil {
+		for _, p := range api.computeAPI.ListProjects() {
+			projects[p] = true
+		}
+	}
+	
+	res := []string{}
+	for p := range projects {
+		res = append(res, p)
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
 
 func (api *API) handleServiceAction(w http.ResponseWriter, r *http.Request) {

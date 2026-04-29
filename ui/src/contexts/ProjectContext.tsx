@@ -20,11 +20,23 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (saved) {
       setActiveProjectState(saved);
     }
+    
+    let baseList = ['local-dev-project', 'production'];
     if (savedList) {
       try {
-        setAvailableProjects(JSON.parse(savedList));
+        baseList = Array.from(new Set([...baseList, ...JSON.parse(savedList)]));
       } catch (e) {}
     }
+
+    // Fetch discovered projects from backend
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(projects => {
+        const merged = Array.from(new Set([...baseList, ...projects]));
+        setAvailableProjects(merged);
+        localStorage.setItem('minisky-projects-list', JSON.stringify(merged));
+      })
+      .catch(() => setAvailableProjects(baseList));
   }, []);
 
   const setActiveProject = (name: string) => {

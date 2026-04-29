@@ -62,3 +62,7 @@ docs/*
 
 DESIGN.md
 .claude
+
+# Examples
+/examples/
+*.id

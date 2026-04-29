@@ -295,3 +295,22 @@ func (api *API) StartHarvester(sm *orchestrator.ServiceManager) {
 		}
 	}()
 }
+func (api *API) ListProjects() []string {
+	api.mu.RLock()
+	defer api.mu.RUnlock()
+	
+	projects := make(map[string]bool)
+	for _, entry := range api.entries {
+		// LogName format: projects/{id}/logs/...
+		parts := strings.Split(entry.LogName, "/")
+		if len(parts) > 1 && parts[0] == "projects" {
+			projects[parts[1]] = true
+		}
+	}
+	
+	res := []string{}
+	for p := range projects {
+		res = append(res, p)
+	}
+	return res
+}

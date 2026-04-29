@@ -21,6 +21,7 @@ provider "google" {
   
   # Authentication (Emulated)
   # MiniSky's internal proxy accepts any well-formed token but will not validate it against Google's servers.
+  # Using access_token is recommended over mock JSON credentials to avoid local ASN.1 parsing errors.
   access_token = "minisky-local-token"
 
   # Custom Endpoints for Local Development
@@ -28,7 +29,7 @@ provider "google" {
   cloud_functions_custom_endpoint = var.gcp_environment == "local" ? "http://localhost:8080/v2/" : null
   pubsub_custom_endpoint          = var.gcp_environment == "local" ? "http://localhost:8080/" : null
   compute_custom_endpoint         = var.gcp_environment == "local" ? "http://localhost:8080/compute/v1/" : null
-  bigquery_custom_endpoint        = var.gcp_environment == "local" ? "http://localhost:8080/bigquery/v2/" : null
+  big_query_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/bigquery/v2/" : null
   cloud_run_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/v2/" : null
   firestore_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/" : null
 }
@@ -107,5 +108,10 @@ When you run `terraform apply`, MiniSky will:
 
 ## 5. Troubleshooting
 - **SSL Errors**: Ensure you use `http://` instead of `https://` in the endpoints.
-- **Project Mismatch**: Always use `local-dev-project` as the project ID unless you have specifically configured other projects in the MiniSky settings.
+- **Project Context**: In MiniSky v1.2.0+, any project ID used in Terraform will be automatically discovered by the Dashboard. 
+- **Concurrency**: Version 1.2.0 introduced `DeepCopy` state management for the Compute Engine shim, resolving data races during high-concurrency `terraform apply` operations.
 - **Logs**: Run `minisky logs tail` or watch the **Dashboard** to see the API calls being intercepted.
+
+## 6. Verified Examples
+
+Check the `examples/demo-launch` directory for a complete, end-to-end working configuration that provisions Compute, BigQuery, Storage, and Pub/Sub in one go.

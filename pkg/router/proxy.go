@@ -80,9 +80,11 @@ func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/storage/") || strings.HasPrefix(path, "/upload/storage/") {
 			targetDomain = "storage.googleapis.com"
-		} else if strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/topics") {
+		} else if strings.HasPrefix(path, "/bigquery/") {
+			targetDomain = "bigquery.googleapis.com"
+		} else if (strings.HasPrefix(path, "/v1/projects/") || strings.HasPrefix(path, "/projects/")) && (strings.Contains(path, "/topics") || strings.Contains(path, "/subscriptions")) {
 			targetDomain = "pubsub.googleapis.com"
-		} else if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/locations/") {
+		} else if strings.HasPrefix(path, "/v2/") || (strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/locations/")) {
 			targetDomain = "cloudfunctions.googleapis.com"
 		} else if strings.HasPrefix(path, "/compute/") {
 			targetDomain = "compute.googleapis.com"

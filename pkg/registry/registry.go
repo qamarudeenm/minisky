@@ -54,6 +54,11 @@ type PostBoot interface {
 	OnPostBoot(ctx *Context)
 }
 
+// ProjectDiscoverer is implemented by shims that track resources by project ID.
+type ProjectDiscoverer interface {
+	ListProjects() []string
+}
+
 // BootAll initializes all registered shims and returns the mapping.
 func BootAll(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceManager) (map[string]http.Handler, []string) {
 	ctx := &Context{
