@@ -16,6 +16,13 @@ builds:
     goos: [linux]
     goarch: [amd64]
 
+  - id: darwin
+    main: ./cmd/minisky
+    binary: minisky
+    env: [CGO_ENABLED=1]
+    goos: [darwin]
+    goarch: [arm64]
+
   - id: windows
     main: ./cmd/minisky
     binary: minisky
