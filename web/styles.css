@@ -296,37 +296,16 @@ body {
     transform: scale(1.02);
 }
 
-.video-placeholder {
+.demo-video {
     width: 100%;
     display: block;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
 }
 
-.video-overlay {
-    position: relative;
-}
-
-.play-btn-pulse {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(66, 133, 244, 0.8);
-    border-radius: 50%;
-    padding: 20px;
-    box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7);
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.4);
-    }
-    70% {
-        box-shadow: 0 0 0 30px rgba(66, 133, 244, 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(66, 133, 244, 0);
-    }
+/* Video playback optimizations */
+.demo-video:focus {
+    outline: none;
 }
 
 /* Section 4: Install */

@@ -61,8 +61,8 @@
                 </div>
                 <div class="value-card">
                     <div class="icon-wrapper bg-yellow">🛠️</div>
-                    <h3>Exact Parity</h3>
-                    <p>Works natively with official GCP SDKs. Just point your emulator host variables.</p>
+                    <h3>Project Discovery</h3>
+                    <p>New in v1.2.0: Automatic detection of project contexts across all services. Your Terraform projects appear instantly in the dashboard.</p>
                 </div>
             </div>
         </div>
@@ -75,15 +75,10 @@
             <p class="section-subtitle">A high-fidelity local cloud experience, designed for modern GCP engineers.</p>
             
             <div class="video-container">
-                <div class="video-overlay">
-                    <img src="images/video_placeholder.png" alt="MiniSky Demo Video Placeholder" class="video-placeholder">
-                    <div class="play-btn-pulse">
-                        <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <circle cx="40" cy="40" r="40" fill="white" fill-opacity="0.2"/>
-                            <path d="M55 40L32.5 52.9904L32.5 27.0096L55 40Z" fill="white"/>
-                        </svg>
-                    </div>
-                </div>
+                <video controls poster="images/video_placeholder.png" class="demo-video">
+                    <source src="images/product_demo.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
             </div>
         </div>
     </section>
@@ -114,12 +109,13 @@
                     <span class="dot green"></span>
                     <span class="terminal-title">main.tf</span>
                 </div>
-                <pre><code><span class="comment"># Override the provider endpoint</span>
+                <pre><code><span class="comment"># Modern provider configuration</span>
 provider "google" {
-  project = "local-project"
-  region  = "us-central1"
-  
-  <span class="command">custom_endpoint</span> = "http://localhost:8080/"
+  project     = "minisky-demo-project"
+  access_token = "minisky-local-token"
+
+  storage_custom_endpoint = "http://localhost:8080/storage/v1/"
+  compute_custom_endpoint = "http://localhost:8080/compute/v1/"
 }</code></pre>
             </div>
         </div>
@@ -222,7 +218,7 @@ minisky start</code></pre>
                         <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:13px;"><code>.\minisky.exe uninstall</code></pre>
                         <div style="margin-top:24px;">
                             <a id="windows-download-btn" href="https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip" class="btn btn-primary" style="display:inline-block;">⬇️ Download minisky.exe</a>
-                            <p style="font-size:12px; color:#777; margin-top:8px;">v1.0.3 · Windows 10/11 · 64-bit · No installer needed</p>
+                             <p style="font-size:12px; color:#777; margin-top:8px;">v1.2.0 · Windows 10/11 · 64-bit · No installer needed</p>
                         </div>
                         <hr style="margin:24px 0; border:none; border-top:1px solid #eee;">
                         <h4>Alternative: Scoop Package Manager</h4>
