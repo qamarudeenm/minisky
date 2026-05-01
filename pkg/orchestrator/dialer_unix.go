@@ -17,6 +17,7 @@ func resolveDockerSocket() string {
 	}
 	// 2. Probe known locations in priority order
 	candidates := []string{
+		filepath.Join(os.Getenv("HOME"), ".docker", "run", "docker.sock"),     // Docker Desktop (current macOS)
 		filepath.Join(os.Getenv("HOME"), ".docker", "desktop", "docker.sock"), // Docker Desktop (Linux/Mac)
 		filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "docker.sock"),            // Rootless Docker
 		filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "podman", "podman.sock"),  // Podman
