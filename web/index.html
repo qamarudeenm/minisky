@@ -158,6 +158,28 @@ provider "google" {
                     <span class="text-muted">Manage specific service instances</span>
                 </div>
             </div>
+            
+            <div class="grid-1" style="margin-top: 24px; text-align: left;">
+                <div class="value-card" style="padding: 24px;">
+                    <h3>🔄 Upgrading MiniSky</h3>
+                    <p style="margin-bottom: 12px; color: #555;">Your local infrastructure data is safely stored in <code>~/.minisky</code>. Updating the binary will automatically preserve all your configurations and running instances.</p>
+                    
+                    <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 250px;">
+                            <h4 style="margin-bottom: 8px; font-size: 14px;">Linux & macOS</h4>
+                            <pre style="background:#f4f4f4;padding:8px 12px;border-radius:6px;font-size:12px; margin: 0;"><code>curl -sSL https://minisky.bmics.com.ng/install.sh | bash</code></pre>
+                        </div>
+                        <div style="flex: 1; min-width: 250px;">
+                            <h4 style="margin-bottom: 8px; font-size: 14px;">Windows (Scoop)</h4>
+                            <pre style="background:#f4f4f4;padding:8px 12px;border-radius:6px;font-size:12px; margin: 0;"><code>scoop update minisky</code></pre>
+                        </div>
+                        <div style="flex: 1; min-width: 250px;">
+                            <h4 style="margin-bottom: 8px; font-size: 14px;">Windows (Direct)</h4>
+                            <p style="font-size: 13px; margin: 0; color: #666; background:#f4f4f4; padding:8px 12px; border-radius:6px; font-family: monospace;">Stop daemon &rarr; Replace minisky.exe</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 

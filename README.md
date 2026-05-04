@@ -75,6 +75,24 @@ minisky uninstall
 ```
 This removes all containers, networks, and data from `~/.minisky`. Then delete the binary to fully uninstall.
 
+### Upgrading
+To upgrade an existing installation to the latest version, you just need to replace the binary. Your data in `~/.minisky` is persistent and will be preserved automatically.
+
+**Linux & macOS:**
+Simply run the install script again:
+```bash
+curl -sSL https://minisky.bmics.com.ng/install.sh | sh
+```
+
+**Windows (Direct):**
+1. Stop the running daemon (`minisky stop` or close the terminal).
+2. Download the new `.zip` and overwrite your existing `minisky.exe`.
+
+**Windows (Scoop):**
+```powershell
+scoop update minisky
+```
+
 ## 📖 Documentation
 
 - [Project Documentation](docs/architecture.md)
