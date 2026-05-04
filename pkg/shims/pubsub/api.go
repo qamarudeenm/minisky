@@ -84,21 +84,24 @@ func (api *API) handlePublish(w http.ResponseWriter, r *http.Request, targetURL 
 		}
 	}
 
+	// Ensure /v1 prefix for emulator compatibility (same as ServeHTTP)
+	if !strings.HasPrefix(r.URL.Path, "/v1/") {
+		r.URL.Path = "/v1" + r.URL.Path
+	}
+
 	// Read body to notify observer
 	body, _ := io.ReadAll(r.Body)
 	r.Body = io.NopCloser(bytes.NewBuffer(body)) // reset for proxy
 
-	// Proxy the request first so we don't block
+	// Proxy the request
 	target, _ := url.Parse(targetURL)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	
-	// Create a response recorder to see if publish succeeded
-	// Actually for simplicity in shim-to-shim, we just notify if we intercepted it and it looks valid.
 	if api.observer != nil && topic != "" {
 		log.Printf("[PubSub Shim] 📢 Intercepted publish to topic: %s", topic)
-		// We pass the raw payload (usually contains "messages")
 		api.observer.HandleEvent("google.cloud.pubsub.topic.v1.messagePublished", topic, string(body))
 	}
 
+	log.Printf("[PubSub Shim] %s %s", r.Method, r.URL.Path)
 	proxy.ServeHTTP(w, r)
 }

@@ -453,12 +453,13 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 	// Drive state machine asynchronously: PROVISIONING → PROVISIONING_DOCKER → RUNNING
 	opName := op.Name
 	api.opMgr.RunAsync(opName, func() error {
-		time.Sleep(1 * time.Second)
+		// 1. Initial Staging phase (simulates resource allocation)
 		api.mu.Lock()
 		if i, ok := api.instances[key]; ok {
 			i.Status = "STAGING"
 		}
 		api.mu.Unlock()
+		time.Sleep(2 * time.Second)
 
 		if isGKE {
 			// Kind already manages the docker daemon side. Mark running directly.
@@ -470,6 +471,13 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 			api.mu.Unlock()
 			return nil
 		}
+
+		// 2. Provisioning phase (simulates Docker container startup)
+		api.mu.Lock()
+		if i, ok := api.instances[key]; ok {
+			i.Status = "PROVISIONING"
+		}
+		api.mu.Unlock()
 
 		vpcName := "default"
 		api.mu.RLock()
@@ -487,19 +495,24 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 
 		// Tell the Orchestrator to physically spin up the Docker container!
 		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcName, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"})
+		
 		api.mu.Lock()
 		if i, ok := api.instances[key]; ok {
 			if err != nil {
 				i.Status = "TERMINATED"
 				i.Description = fmt.Sprintf("Failed to provision docker data plane: %v", err)
-			} else {
-				i.Status = "RUNNING"
-				i.Description = fmt.Sprintf("Docker Container ID mapping: %s", containerName)
+				api.mu.Unlock()
+				return err
 			}
+			
+			// 3. Post-provisioning delay to ensure the UI catches the transition
+			time.Sleep(1500 * time.Millisecond)
+
+			i.Status = "RUNNING"
+			i.Description = fmt.Sprintf("Docker Container ID mapping: %s", containerName)
 		}
 		api.mu.Unlock()
-		
-		return err
+		return nil
 	})
 
 	w.WriteHeader(http.StatusOK)
@@ -584,30 +597,41 @@ func (api *API) deleteInstance(w http.ResponseWriter, r *http.Request, project, 
 	key := instanceKey(project, zone, name)
 	api.mu.Lock()
 	inst, ok := api.instances[key]
-	if ok {
-		if r.Header.Get("X-Minisky-GKE-Bypass") != "true" && inst.Labels != nil && inst.Labels["managed-by"] == "gke" {
-			api.mu.Unlock()
-			w.WriteHeader(http.StatusForbidden)
-			writeError(w, 403, "FORBIDDEN", "This instance is managed by Kubernetes Engine and cannot be manually deleted.")
-			return
-		}
-		delete(api.instances, key)
-	}
-	api.mu.Unlock()
-
 	if !ok {
+		api.mu.Unlock()
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, 404, "NOT_FOUND", fmt.Sprintf("Instance '%s' not found", name))
 		return
 	}
 
+	if r.Header.Get("X-Minisky-GKE-Bypass") != "true" && inst.Labels != nil && inst.Labels["managed-by"] == "gke" {
+		api.mu.Unlock()
+		w.WriteHeader(http.StatusForbidden)
+		writeError(w, 403, "FORBIDDEN", "This instance is managed by Kubernetes Engine and cannot be manually deleted.")
+		return
+	}
+
+	// Mark as DELETING so the UI shows the "winding down" process
+	inst.Status = "DELETING"
+	api.mu.Unlock()
+
 	containerName := fmt.Sprintf("minisky-vm-%s", name)
 	op := api.opMgr.Register("compute#operation", "delete",
 		selfLinkInstance(project, zone, name), zone, "")
+	
 	api.opMgr.RunAsync(op.Name, func() error {
+		// Simulate winding down time
+		time.Sleep(3 * time.Second)
+		
 		api.svcMgr.DeleteComputeVM(containerName)
+		
+		// Finally remove from memory
+		api.mu.Lock()
+		delete(api.instances, key)
+		api.mu.Unlock()
 		return nil 
 	})
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(op)
 }

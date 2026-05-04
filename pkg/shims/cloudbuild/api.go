@@ -154,7 +154,10 @@ func (api *API) handleCreateBuild(w http.ResponseWriter, r *http.Request, projec
 	api.opMgr.UpdateMetadata(op.Name, build)
 	api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Build %s queued with %d steps", build.Id, len(build.Steps)))
 
-	go api.executeBuild(project, build, op.Name)
+	api.opMgr.RunAsync(op.Name, func() error {
+		api.executeBuild(project, build, op.Name)
+		return nil
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(op)
@@ -183,7 +186,6 @@ func (api *API) handleListBuilds(w http.ResponseWriter, r *http.Request, project
 }
 
 func (api *API) executeBuild(project string, build Build, opName string) {
-	api.opMgr.Advance(opName, 10, orchestrator.StatusRunning)
 	build.Status = "WORKING"
 	build.StartTime = time.Now().UTC().Format(time.RFC3339)
 	api.opMgr.UpdateMetadata(opName, build)
@@ -251,7 +253,6 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 		api.opMgr.Fail(opName, 500, "Build failed")
 	} else {
 		build.Status = "SUCCESS"
-		api.opMgr.MarkDone(opName)
 		api.pushLog(project, "INFO", build.Id, "Build SUCCESS")
 	}
 	api.opMgr.UpdateMetadata(opName, build)

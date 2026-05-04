@@ -16,6 +16,7 @@ func init() {
 	registry.Register("artifactregistry.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return &API{
 			svcMgr: ctx.SvcMgr,
+			opMgr:  ctx.OpMgr,
 			repos:  make(map[string]*Repository),
 		}
 	})
@@ -46,11 +47,13 @@ type Version struct {
 
 type API struct {
 	svcMgr *orchestrator.ServiceManager
+	opMgr  *orchestrator.OperationManager
 	repos  map[string]*Repository
 }
 
-func NewAPI(sm *orchestrator.ServiceManager) *API {
+func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManager) *API {
 	return &API{
+		opMgr:  opMgr,
 		svcMgr: sm,
 		repos:  make(map[string]*Repository),
 	}
@@ -132,8 +135,15 @@ func (api *API) handleCreateRepository(w http.ResponseWriter, r *http.Request) {
 	
 	api.repos[repo.Name] = &repo
 
+	op := api.opMgr.Register("artifactregistry#operation", "CREATE", repo.Name, "", location)
+	api.opMgr.RunAsync(op.Name, func() error {
+		// Artifact registry creation is mostly metadata-only in the shim
+		// but we might want to ensure the backing docker registry is ready
+		return nil
+	})
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(repo)
+	json.NewEncoder(w).Encode(op)
 }
 
 func (api *API) handleListPackages(w http.ResponseWriter, r *http.Request) {

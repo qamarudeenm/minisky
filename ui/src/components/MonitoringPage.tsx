@@ -134,7 +134,7 @@ export default function MonitoringPage() {
 
   const startStream = () => {
     setStreaming(true);
-    timerRef.current = setInterval(fetchMetrics, 5000);
+    timerRef.current = setInterval(fetchMetrics, 1000);
   };
 
   const stopStream = () => {

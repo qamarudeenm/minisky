@@ -315,19 +315,22 @@ func (api *API) deleteCluster(w http.ResponseWriter, r *http.Request, project, z
 	key := clusterKey(project, zone, name)
 	api.mu.Lock()
 	cl, ok := api.clusters[key]
-	if ok {
-		delete(api.clusters, key)
-	}
-	api.mu.Unlock()
-
 	if !ok {
+		api.mu.Unlock()
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, 404, "NOT_FOUND", fmt.Sprintf("Cluster '%s' not found", name))
 		return
 	}
+	
+	// Mark as STOPPING to simulate winding down in the UI
+	cl.Status = "STOPPING"
+	api.mu.Unlock()
 
 	op := api.opMgr.Register("container#operation", "DELETE_CLUSTER", cl.SelfLink, zone, "")
 	api.opMgr.RunAsync(op.Name, func() error {
+		// Simulate winding down time
+		time.Sleep(3 * time.Second)
+
 		if api.backend.Enabled() {
 			api.backend.DeleteCluster(name)
 		}
@@ -358,6 +361,12 @@ func (api *API) deleteCluster(w http.ResponseWriter, r *http.Request, project, z
 				}
 			}
 		}()
+
+		// Finally remove from memory
+		api.mu.Lock()
+		delete(api.clusters, key)
+		api.mu.Unlock()
+
 		return nil
 	})
 	gkeOp := toGkeOperation(op, "DELETE_CLUSTER", project, zone, cl.SelfLink)

@@ -79,8 +79,8 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
         })
         .catch(console.error);
 
-      // Poll status every 3s to catch PROVISIONING→RUNNING transitions
-      const t = setInterval(loadInstances, 3000);
+      // Poll status every 1s to catch PROVISIONING→RUNNING transitions
+      const t = setInterval(loadInstances, 1000);
       return () => clearInterval(t);
     }
   }, [open, loadInstances, activeProject]);
@@ -145,6 +145,7 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
       case 'RUNNING': return 'success';
       case 'STAGING':
       case 'PROVISIONING': return 'warning';
+      case 'DELETING':
       case 'TERMINATED': return 'error';
       default: return 'default';
     }
@@ -328,7 +329,7 @@ export default function ComputeManagerDrawer({ open, onClose }: ComputeManagerDr
 
       <Snackbar
         open={toast.open}
-        autoHideDuration={3000}
+        autoHideDuration={1500}
         onClose={() => setToast(t => ({ ...t, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

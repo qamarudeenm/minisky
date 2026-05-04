@@ -335,26 +335,35 @@ func (api *API) deleteInstance(w http.ResponseWriter, r *http.Request, project, 
 	key := instanceKey(project, name)
 	api.mu.Lock()
 	inst, ok := api.instances[key]
-	if ok {
-		inst.State = "DELETED"
-		delete(api.instances, key)
-		delete(api.databases, key)
-		delete(api.users, key)
-	}
-	api.mu.Unlock()
-
 	if !ok {
+		api.mu.Unlock()
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, 404, "NOT_FOUND", fmt.Sprintf("Instance '%s' not found", name))
 		return
 	}
 
+	// Mark as DELETED to simulate winding down in the UI
+	inst.State = "DELETED"
+	api.mu.Unlock()
+
 	selfLink := fmt.Sprintf("https://sqladmin.googleapis.com/v1/projects/%s/instances/%s", project, name)
 	op := api.opMgr.Register("sql#operation", "DELETE", selfLink, "", "")
+	
 	api.opMgr.RunAsync(op.Name, func() error {
+		// Simulate winding down time
+		time.Sleep(3 * time.Second)
+		
 		api.svcMgr.DeleteCloudSQLVM(name)
+		
+		// Finally remove from memory
+		api.mu.Lock()
+		delete(api.instances, key)
+		delete(api.databases, key)
+		delete(api.users, key)
+		api.mu.Unlock()
 		return nil
 	})
+	
 	sqlOp := toSqlOperation(op, "DELETE", selfLink)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(sqlOp)

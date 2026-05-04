@@ -324,6 +324,21 @@ func (api *API) routeDatasets(w http.ResponseWriter, r *http.Request, path strin
 			})
 		}
 
+	case http.MethodPatch, http.MethodPut:
+		// Terraform often PATCHes datasets to update metadata/labels.
+		// In the shim, we just return the existing dataset as a successful update.
+		key := project + ":" + datasetId
+		api.mu.RLock()
+		ds, ok := api.datasets[key]
+		api.mu.RUnlock()
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			writeError(w, 404, "NOT_FOUND", "Dataset "+datasetId+" not found")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(ds)
+
 	case http.MethodDelete:
 		key := project + ":" + datasetId
 		api.mu.Lock()

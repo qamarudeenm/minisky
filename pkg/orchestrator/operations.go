@@ -157,20 +157,32 @@ func (om *OperationManager) Fail(name string, code int, message string) {
 }
 
 // RunAsync drives a standard 3-phase LRO lifecycle in a goroutine.
-// It calls workFn in the RUNNING phase; if workFn returns an error the operation is marked failed.
+// It ensures that intermediate states (PENDING, RUNNING) are visible to polling clients
+// by introducing artificial delays and granular progress increments.
 func (om *OperationManager) RunAsync(name string, workFn func() error) {
 	go func() {
-		// PENDING → RUNNING
-		time.Sleep(200 * time.Millisecond)
-		om.Advance(name, 10, StatusRunning)
+		// 1. Initial delay to ensure the caller (Terraform/UI) registers the initial PENDING state
+		time.Sleep(800 * time.Millisecond)
+		
+		// 2. Transition PENDING → RUNNING (Low progress)
+		om.Advance(name, 5, StatusRunning)
+		time.Sleep(1200 * time.Millisecond)
+		
+		// 3. Increment progress to show life before work starts
+		om.Advance(name, 25, StatusRunning)
+		time.Sleep(500 * time.Millisecond)
 
-		// Execute actual work (container boot, etc.)
+		// 4. Execute actual work (container boot, provisioning, etc.)
 		if err := workFn(); err != nil {
 			om.Fail(name, 500, err.Error())
 			return
 		}
+		
+		// 5. Successful work completion - show high progress before finishing
+		om.Advance(name, 85, StatusRunning)
+		time.Sleep(500 * time.Millisecond)
 
-		// RUNNING → DONE
+		// 6. Transition RUNNING → DONE
 		om.Advance(name, 100, StatusDone)
 	}()
 }
