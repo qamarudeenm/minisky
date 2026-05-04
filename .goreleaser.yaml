@@ -19,7 +19,7 @@ builds:
   - id: darwin
     main: ./cmd/minisky
     binary: minisky
-    env: [CGO_ENABLED=1]
+    env: [CGO_ENABLED=0]
     goos: [darwin]
     goarch: [arm64]
 

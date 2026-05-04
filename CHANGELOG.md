@@ -5,7 +5,18 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.3] - 2026-04-29
+## [1.2.2] - 2026-05-04
+
+### Added
+- **macOS arm64 Build**: Added `darwin/arm64` target to the release pipeline, producing a native Apple Silicon binary (`minisky_darwin_arm64.tar.gz`) for the first time. Installer script now validates the asset exists in the release before downloading, preventing silent 404 failures.
+- **Improved Installer Robustness**: Switched `curl` to `--fail` mode (`-fsSL`) so HTTP errors abort cleanly. Asset URL is now resolved from the GitHub Releases API manifest instead of being blindly constructed.
+- **Docker Socket Detection (macOS)**: Added `~/.docker/run/docker.sock` as a candidate path in the Docker socket resolver, matching Docker Desktop ≥ 4.13 on macOS.
+- **Platform Roadmap**: Added a `Platform Roadmap — DuckDB / CGO` section to the README documenting the planned path to full BigQuery DuckDB emulation on macOS arm64 and Windows native.
+
+### Changed
+- **macOS BigQuery**: The `darwin/arm64` binary is built with `CGO_ENABLED=0` for this release. BigQuery SQL execution falls back to the in-memory mock (same behaviour as Windows). All other GCP services are fully functional. Full DuckDB support on macOS is tracked on the roadmap.
+
+## [1.2.1] - 2026-05-04
 
 ### Added
 - **Global Uninstall Command**: Added an `uninstall` CLI command (`minisky uninstall`) to gracefully stop the daemon, prune all `minisky-*` Docker containers/networks, and delete the data directory.
@@ -59,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Single Binary**: Fully self-contained architecture for maximum portability.
 
 ---
+[1.2.2]: https://github.com/qamarudeenm/minisky/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/qamarudeenm/minisky/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/qamarudeenm/minisky/compare/v1.0.3...v1.2.0
 [1.0.3]: https://github.com/qamarudeenm/minisky/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/qamarudeenm/minisky/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/qamarudeenm/minisky/compare/v1.0.0...v1.0.1
