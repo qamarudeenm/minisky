@@ -93,22 +93,61 @@ curl -sSL https://minisky.bmics.com.ng/install.sh | sh
 scoop update minisky
 ```
 
-## 📖 Documentation
-
-- [Project Documentation](docs/architecture.md)
 
 ## 🖥️ Platform Compatibility
 
-MiniSky is cross-platform, but some features have varying support levels:
+MiniSky is cross-platform. All core GCP services work on every platform. BigQuery SQL execution uses an embedded [DuckDB](https://duckdb.org) engine which requires CGO — platforms where CGO is not available fall back to an in-memory mock that returns valid empty responses.
 
-| Feature | Linux | macOS | Windows (Native) | Windows (WSL2/Docker) |
+| Feature | Linux (amd64) | macOS (arm64) | Windows (Native) | Windows (WSL2 / Docker) |
 | :--- | :---: | :---: | :---: | :---: |
-| GKE / Compute / Storage | ✅ | ✅ | ✅ | ✅ |
-| Pub/Sub / Cloud SQL | ✅ | ✅ | ✅ | ✅ |
-| BigQuery SQL Execution | ✅ | ✅ | ⚠️ (Mock) | ✅ |
-| **CGO Required** | Yes | Yes | No | Yes |
+| Compute / GKE / Storage | ✅ | ✅ | ✅ | ✅ |
+| Pub/Sub / Cloud SQL / VPC | ✅ | ✅ | ✅ | ✅ |
+| BigQuery SQL execution (DuckDB) | ✅ Full | ⚠️ Mock\* | ⚠️ Mock\* | ✅ Full |
+| CGO build | Yes | No (v1.2.x) | No | Yes |
 
-> **Note**: Native Windows builds use a `CGO_DISABLED=1` configuration for maximum portability. This means BigQuery SQL execution is mocked. For full high-fidelity BigQuery emulation on Windows, we recommend running MiniSky via **Docker Desktop** or **WSL2**.
+\* BigQuery queries return valid empty results. Schema inference, table creation, and insert operations work correctly. SQL execution is mocked pending CGO cross-compilation toolchain for darwin/arm64 and Windows.
+
+> **Recommended alternative for macOS & Windows users who need full BigQuery SQL:**  
+> Run MiniSky via **Docker Desktop** or **WSL2** on Windows — both use the Linux binary with full DuckDB support.
+
+---
+
+## 🗺️ Platform Roadmap — DuckDB / CGO
+
+This roadmap tracks the work required to enable full DuckDB-powered BigQuery emulation on macOS and Windows native builds.
+
+### macOS arm64 — DuckDB Status: `⚠️ Mocked (v1.2.x)`
+
+The darwin/arm64 binary is currently built with `CGO_ENABLED=0`. DuckDB compiles ~700k lines of C++ at build time and requires a Darwin-targeting C++ cross-compiler to produce a macOS binary from our Linux release machine.
+
+**Planned implementation (post v1.2.x):**
+
+| Step | What | Status |
+| :--- | :--- | :---: |
+| 1 | Integrate `goreleaser-cross` Docker image into `release.sh --docker` | 🔜 Planned |
+| 2 | Set darwin target: `CC=o64-clang`, `CGO_ENABLED=1` in `.goreleaser.yaml` | 🔜 Planned |
+| 3 | Validate `minisky_darwin_arm64.tar.gz` DuckDB BQ execution on M-series Mac | 🔜 Planned |
+| 4 | Update installer + compatibility table to ✅ | 🔜 Planned |
+
+**Alternative paths under consideration:**
+- `zig cc -target aarch64-macos` as a lightweight cross-compiler (5 min setup, no image pull)
+- `osxcross` built from source (~30 min, most robust)
+
+### Windows amd64 — DuckDB Status: `⚠️ Mocked (by design)`
+
+Windows builds use `CGO_ENABLED=0` for maximum portability (no MSVC/mingw dependency chain for end users). DuckDB on Windows native requires either a MinGW64 toolchain or a pre-built DuckDB `.dll`.
+
+**Planned implementation (post v1.2.x):**
+
+| Step | What | Status |
+| :--- | :--- | :---: |
+| 1 | Evaluate shipping a pre-built `duckdb.dll` alongside the Windows binary | 🔜 Investigating |
+| 2 | Or: ship a DuckDB-enabled Windows build via `goreleaser-cross` + MinGW64 | 🔜 Investigating |
+| 3 | Or: document WSL2 as the canonical Windows BigQuery path | 🔜 Fallback |
+
+> **Current recommended workaround:** Windows users needing full BigQuery SQL emulation should use **WSL2** + the Linux install script, or run `docker run` with the MiniSky Linux image.
+
+---
 
 ## 📖 Documentation
 
