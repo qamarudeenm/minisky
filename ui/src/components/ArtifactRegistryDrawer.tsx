@@ -44,17 +44,17 @@ export default function ArtifactRegistryDrawer({ open, onClose }: ArtifactRegist
 
   const loadPackages = async (repoName: string) => {
     try {
-      const res = await fetch(`/api/proxy/artifactregistry/v1/${repoName}/packages`);
+      const res = await fetch(`/api/manage/artifactregistry/${repoName}/packages`);
       if (res.ok) {
         const data = await res.json();
         setPackages(data.packages || []);
       }
     } catch (e) { console.error(e); }
   };
-
+ 
   const loadVersions = async (packageName: string) => {
     try {
-      const res = await fetch(`/api/proxy/artifactregistry/v1/${packageName}/versions`);
+      const res = await fetch(`/api/manage/artifactregistry/${packageName}/versions`);
       if (res.ok) {
         const data = await res.json();
         setVersions(data.versions || []);

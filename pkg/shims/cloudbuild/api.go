@@ -17,16 +17,25 @@ import (
 func init() {
 	registry.Register("cloudbuild.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return &API{
-			svcMgr: ctx.SvcMgr,
-			opMgr:  ctx.OpMgr,
+			svcMgr:    ctx.SvcMgr,
+			opMgr:     ctx.OpMgr,
+			buildLogs: make(map[string][]LogEntry),
 		}
 	})
+}
+
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Severity  string `json:"severity"`
+	Message   string `json:"message"`
 }
 
 type API struct {
 	mu     sync.Mutex
 	svcMgr *orchestrator.ServiceManager
 	opMgr  *orchestrator.OperationManager
+	// buildLogs stores per-build log lines keyed by buildId
+	buildLogs map[string][]LogEntry
 }
 
 type Build struct {
@@ -45,8 +54,9 @@ type Source struct {
 }
 
 type RepoSource struct {
-	RepoName  string `json:"repoName"` // e.g. "github.com/user/repo"
+	RepoName   string `json:"repoName"`
 	BranchName string `json:"branchName,omitempty"`
+	GitHubToken string `json:"githubToken,omitempty"` // PAT for private repos (never logged)
 }
 
 type BuildTrigger struct {
@@ -73,64 +83,68 @@ type Step struct {
 	Dir  string   `json:"dir,omitempty"`
 }
 
+func extractProject(parts []string) string {
+	for i, p := range parts {
+		if p == "projects" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "local-dev-project"
+}
+
+func extractBuildId(parts []string) string {
+	for i, p := range parts {
+		if p == "builds" && i+1 < len(parts) {
+			return strings.Split(parts[i+1], ":")[0]
+		}
+	}
+	return ""
+}
+
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	log.Printf("[Shim: Cloud Build] %s %s", r.Method, path)
+	parts := strings.Split(path, "/")
 
+	// GET /builds/{id}/logs
+	if r.Method == "GET" && strings.HasSuffix(path, "/logs") {
+		buildId := ""
+		for i, p := range parts {
+			if p == "builds" && i+1 < len(parts) {
+				buildId = parts[i+1]
+			}
+		}
+		api.handleGetLogs(w, r, buildId)
+		return
+	}
+
+	// POST /builds
 	if r.Method == "POST" && strings.HasSuffix(path, "/builds") {
-		parts := strings.Split(path, "/")
-		var project string
-		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-				break
-			}
-		}
-		if project == "" { project = "local-dev-project" }
-		api.handleCreateBuild(w, r, project)
+		api.handleCreateBuild(w, r, extractProject(parts))
 		return
 	}
 
+	// GET /builds
 	if r.Method == "GET" && strings.HasSuffix(path, "/builds") {
-		parts := strings.Split(path, "/")
-		var project string
-		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-				break
-			}
-		}
-		if project == "" { project = "local-dev-project" }
-		api.handleListBuilds(w, r, project)
+		api.handleListBuilds(w, r, extractProject(parts))
 		return
 	}
 
+	// POST /triggers
 	if r.Method == "POST" && strings.HasSuffix(path, "/triggers") {
-		parts := strings.Split(path, "/")
-		var project string
-		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-				break
-			}
-		}
-		if project == "" { project = "local-dev-project" }
-		api.handleCreateTrigger(w, r, project)
+		api.handleCreateTrigger(w, r, extractProject(parts))
 		return
 	}
 
+	// POST /triggers/{id}:run
 	if r.Method == "POST" && strings.Contains(path, "/triggers/") && strings.HasSuffix(path, ":run") {
-		parts := strings.Split(path, "/")
-		var project, triggerId string
+		project := extractProject(parts)
+		triggerId := ""
 		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-			}
 			if p == "triggers" && i+1 < len(parts) {
-				triggerId = parts[i+1]
+				triggerId = strings.Split(parts[i+1], ":")[0]
 			}
 		}
-		triggerId = strings.Split(triggerId, ":")[0]
 		api.handleRunTrigger(w, r, project, triggerId)
 		return
 	}
@@ -189,7 +203,7 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 	build.Status = "WORKING"
 	build.StartTime = time.Now().UTC().Format(time.RFC3339)
 	api.opMgr.UpdateMetadata(opName, build)
-	
+
 	// Workspace volume for sharing code between steps
 	workspaceVol := fmt.Sprintf("minisky-build-workspace-%s", build.Id)
 
@@ -201,19 +215,39 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 		if !strings.HasPrefix(repo, "http") {
 			repo = "https://" + repo
 		}
+		// Inject token for private repos (oauth2 works with GitHub PATs)
+		if token := build.Source.RepoSource.GitHubToken; token != "" {
+			// Insert token into URL: https://oauth2:TOKEN@github.com/...
+			repo = strings.Replace(repo, "https://", "https://oauth2:"+token+"@", 1)
+		}
 		branch := build.Source.RepoSource.BranchName
-		if branch == "" { branch = "main" }
+		if branch == "" {
+			branch = "main"
+		}
+		// Log a sanitized URL (never log the token)
+		safeRepo := build.Source.RepoSource.RepoName
+		api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Cloning %s (branch: %s)...", safeRepo, branch))
 
-		api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Cloning %s (branch: %s)...", repo, branch))
-		
 		cloneContainer := fmt.Sprintf("minisky-build-clone-%s", build.Id)
-		// We use a helper container to clone into a volume
-		err := api.svcMgr.ProvisionBuildStep(cloneContainer, "alpine/git:latest", []string{workspaceVol + ":/workspace"}, []string{}, []string{"clone", "-b", branch, repo, "/workspace"})
+		err := api.svcMgr.ProvisionBuildStep(cloneContainer, "alpine/git:latest",
+			[]string{workspaceVol + ":/workspace"}, []string{}, []string{"clone", "-b", branch, repo, "/workspace"})
 		if err != nil {
-			api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Source clone failed: %v", err))
+			api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Source clone failed to start: %v", err))
 			failed = true
 		} else {
-			time.Sleep(3 * time.Second)
+			output, exitCode, waitErr := api.svcMgr.WaitForContainerExit(cloneContainer, 5*time.Minute)
+			// Emit each line of clone output as a log entry
+			for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+				if line != "" {
+					api.pushLog(project, "INFO", build.Id, line)
+				}
+			}
+			if waitErr != nil || exitCode != 0 {
+				api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Clone exited with code %d: %v", exitCode, waitErr))
+				failed = true
+			} else {
+				api.pushLog(project, "INFO", build.Id, "Source cloned successfully.")
+			}
 			api.svcMgr.StopAndRemoveContainer(cloneContainer)
 		}
 	}
@@ -221,28 +255,41 @@ func (api *API) executeBuild(project string, build Build, opName string) {
 	if !failed {
 		for i, step := range build.Steps {
 			api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d: %s %s", i, step.Name, strings.Join(step.Args, " ")))
-			
+
 			img := step.Name
 			if !strings.Contains(img, "/") && !strings.Contains(img, ":") {
 				img = img + ":latest"
 			}
-			
 			if strings.HasPrefix(img, "gcr.io/cloud-builders/") {
 				tool := strings.TrimPrefix(img, "gcr.io/cloud-builders/")
-				if tool == "docker" { img = "docker:latest" }
+				if tool == "docker" {
+					img = "docker:latest"
+				}
 			}
 
 			containerName := fmt.Sprintf("minisky-build-step-%s-%d", build.Id, i)
-			// Mount the workspace volume to all steps
-			err := api.svcMgr.ProvisionBuildStep(containerName, img, []string{workspaceVol + ":/workspace"}, step.Env, step.Args)
+			err := api.svcMgr.ProvisionBuildStep(containerName, img,
+				[]string{workspaceVol + ":/workspace"}, step.Env, step.Args)
 			if err != nil {
-				api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Step #%d failed: %v", i, err))
+				api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Step #%d failed to start: %v", i, err))
 				failed = true
 				break
 			}
-			
-			time.Sleep(3 * time.Second) // Simulate build time
-			api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d finished successfully", i))
+
+			// Wait for real completion and capture output
+			output, exitCode, waitErr := api.svcMgr.WaitForContainerExit(containerName, 30*time.Minute)
+			for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+				if line != "" {
+					api.pushLog(project, "INFO", build.Id, line)
+				}
+			}
+			if waitErr != nil || exitCode != 0 {
+				api.pushLog(project, "ERROR", build.Id, fmt.Sprintf("Step #%d failed (exit %d): %v", i, exitCode, waitErr))
+				failed = true
+				api.svcMgr.StopAndRemoveContainer(containerName)
+				break
+			}
+			api.pushLog(project, "INFO", build.Id, fmt.Sprintf("Step #%d finished successfully.", i))
 			api.svcMgr.StopAndRemoveContainer(containerName)
 		}
 	}
@@ -298,6 +345,25 @@ func (api *API) Proxy() *httputil.ReverseProxy {
 	return nil // Not used in this implementation style
 }
 
-func (api *API) pushLog(project, severity, id, msg string) {
-	log.Printf("[%s] BUILD %s: %s", severity, id, msg)
+func (api *API) pushLog(project, severity, buildId, msg string) {
+	log.Printf("[%s] BUILD %s: %s", severity, buildId, msg)
+	entry := LogEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Severity:  severity,
+		Message:   msg,
+	}
+	api.mu.Lock()
+	api.buildLogs[buildId] = append(api.buildLogs[buildId], entry)
+	api.mu.Unlock()
+}
+
+func (api *API) handleGetLogs(w http.ResponseWriter, r *http.Request, buildId string) {
+	api.mu.Lock()
+	entries := api.buildLogs[buildId]
+	api.mu.Unlock()
+	if entries == nil {
+		entries = []LogEntry{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"logs": entries})
 }

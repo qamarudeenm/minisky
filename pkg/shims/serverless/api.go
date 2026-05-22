@@ -379,7 +379,7 @@ func (api *API) createFunction(w http.ResponseWriter, r *http.Request, project, 
 			}
 		}
 
-		url, err := api.svcMgr.ProvisionServerlessVM(functionId, image, env)
+		url, err := api.svcMgr.ProvisionServerlessVM(functionId, image, env, "8080")
 		if err != nil {
 			log.Printf("[Serverless] Provisioning failed: %v", err)
 			api.mu.Lock()
@@ -537,7 +537,14 @@ func (api *API) createService(w http.ResponseWriter, r *http.Request, project, l
 			}
 		}
 
-		url, err := api.svcMgr.ProvisionServerlessVM(serviceId, image, env)
+		port := "8080"
+		if body.Template != nil && len(body.Template.Containers) > 0 && len(body.Template.Containers[0].Ports) > 0 {
+			if p := body.Template.Containers[0].Ports[0].ContainerPort; p > 0 {
+				port = fmt.Sprintf("%d", p)
+			}
+		}
+
+		url, err := api.svcMgr.ProvisionServerlessVM(serviceId, image, env, port)
 		if err != nil {
 			log.Printf("[Serverless] Run Provisioning failed: %v", err)
 			api.mu.Lock()
@@ -732,7 +739,7 @@ func (api *API) deployResource(w http.ResponseWriter, r *http.Request) { log.Pri
 			envVars = []string{"PORT=8080"} // Cloud Run services don't use FUNCTION_TARGET
 		}
 
-		url, err := api.svcMgr.ProvisionServerlessVM(req.Name, image, envVars)
+		url, err := api.svcMgr.ProvisionServerlessVM(req.Name, image, envVars, "8080")
 		if err != nil {
 			api.mu.Lock()
 			if f, ok := api.functions[serverlessKey(req.Project, req.Location, req.Name)]; ok {

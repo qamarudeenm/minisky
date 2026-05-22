@@ -183,6 +183,37 @@ func (sm *ServiceManager) EnsureServiceRunning(ctx context.Context, domain strin
 	return internalURL, nil
 }
 
+// WaitForContainerExit polls Docker until the named container exits (or timeout),
+// then returns its combined stdout+stderr output and exit code.
+func (sm *ServiceManager) WaitForContainerExit(name string, timeout time.Duration) (string, int, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", name))
+		if err != nil {
+			return "", -1, err
+		}
+		var info struct {
+			State struct {
+				Status   string
+				ExitCode int
+			}
+		}
+		json.NewDecoder(resp.Body).Decode(&info)
+		resp.Body.Close()
+
+		switch info.State.Status {
+		case "exited", "dead":
+			// Grab logs
+			logs, _ := sm.GetContainerLogs(name, 500)
+			return logs, info.State.ExitCode, nil
+		case "":
+			return "", -1, fmt.Errorf("container %s not found", name)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return "", -1, fmt.Errorf("container %s did not exit within %v", name, timeout)
+}
+
 // StopServiceContainer stops the underlying docker container for a given service domain.
 func (sm *ServiceManager) StopAndRemoveContainer(name string) error {
 	// 1. Stop
@@ -738,15 +769,29 @@ func (sm *ServiceManager) DeleteComputeVM(containerName string) error {
 }
 
 // ProvisionServerlessVM starts a container from a custom image (typically built by Buildpacks).
-func (sm *ServiceManager) ProvisionServerlessVM(resourceName string, image string, env []string) (string, error) {
+func (sm *ServiceManager) ProvisionServerlessVM(resourceName string, image string, env []string, port string) (string, error) {
 	containerName := "minisky-serverless-" + resourceName
-	log.Printf("[Orchestrator] Provisioning Serverless VM: %s (image: %s)", containerName, image)
-
+	log.Printf("[Orchestrator] Provisioning Serverless VM: %s (image: %s port: %s)", containerName, image, port)
+ 
+	exists, err := sm.ImageExistsPublic(image)
+	if err != nil {
+		log.Printf("[Orchestrator] Image check error for %s: %v", image, err)
+	}
+	if !exists {
+		log.Printf("[Orchestrator] Pulling serverless image: %s...", image)
+		if err := sm.pullImageInternal(image); err != nil {
+			log.Printf("[Orchestrator] Pull warning for %s: %v", image, err)
+		}
+	}
+ 
 	// Clean up any stale container
 	req, _ := http.NewRequest("DELETE", fmt.Sprintf("http://localhost/containers/%s?force=true", containerName), nil)
 	sm.dockerClient.Do(req)
 
-	expPort := "8080/tcp"
+	if port == "" {
+		port = "8080"
+	}
+	expPort := port + "/tcp"
 	payload := map[string]interface{}{
 		"Image": image,
 		"Env":   append(sm.standardEnv(), env...),

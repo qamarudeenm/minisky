@@ -279,7 +279,7 @@ func (api *API) handleDirectDeploy(w http.ResponseWriter, r *http.Request) {
 
 		// Provision as a Serverless VM
 		containerName := fmt.Sprintf("minisky-appengine-%s-%s-%s", req.Project, req.Service, req.Version)
-		_, err = api.svcMgr.ProvisionServerlessVM(containerName, image, []string{"PORT=8080", "GAE_SERVICE="+req.Service, "GAE_VERSION="+req.Version})
+		_, err = api.svcMgr.ProvisionServerlessVM(containerName, image, []string{"PORT=8080", "GAE_SERVICE="+req.Service, "GAE_VERSION="+req.Version}, "8080")
 		if err != nil {
 			api.pushLog(req.Project, "ERROR", req.Service, fmt.Sprintf("Deployment failed for version %s: %v", req.Version, err))
 			return err
