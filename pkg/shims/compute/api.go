@@ -25,27 +25,27 @@ func init() {
 
 // Instance represents a GCE VM with its full lifecycle state.
 type Instance struct {
-	Kind              string            `json:"kind"`
-	ID                string            `json:"id"`
-	Name              string            `json:"name"`
-	Zone              string            `json:"zone"`
-	MachineType       string            `json:"machineType"`
-	Status            string            `json:"status"`
-	SelfLink          string            `json:"selfLink"`
-	Description       string            `json:"description"`
-	Labels            map[string]string `json:"labels,omitempty"`
-	Metadata          *InstanceMetadata `json:"metadata,omitempty"`
-	NetworkInterfaces []NetworkInterface `json:"networkInterfaces"`
-	Disks             []AttachedDisk    `json:"disks"`
-	CreationTimestamp string            `json:"creationTimestamp"`
+	Kind              string                     `json:"kind"`
+	ID                string                     `json:"id"`
+	Name              string                     `json:"name"`
+	Zone              string                     `json:"zone"`
+	MachineType       string                     `json:"machineType"`
+	Status            string                     `json:"status"`
+	SelfLink          string                     `json:"selfLink"`
+	Description       string                     `json:"description"`
+	Labels            map[string]string          `json:"labels,omitempty"`
+	Metadata          *InstanceMetadata          `json:"metadata,omitempty"`
+	NetworkInterfaces []NetworkInterface         `json:"networkInterfaces"`
+	Disks             []AttachedDisk             `json:"disks"`
+	CreationTimestamp string                     `json:"creationTimestamp"`
 	HostPorts         []orchestrator.PortMapping `json:"hostPorts,omitempty"`
 	// internal tracking only
-	project string
-	zone    string
-	Fingerprint string `json:"fingerprint"`
-	LabelFingerprint  string            `json:"labelFingerprint"`
-	Scheduling        *Scheduling       `json:"scheduling,omitempty"`
-	CanIpForward      bool              `json:"canIpForward"`
+	project          string
+	zone             string
+	Fingerprint      string      `json:"fingerprint"`
+	LabelFingerprint string      `json:"labelFingerprint"`
+	Scheduling       *Scheduling `json:"scheduling,omitempty"`
+	CanIpForward     bool        `json:"canIpForward"`
 }
 
 func (i *Instance) DeepCopy() *Instance {
@@ -92,8 +92,8 @@ type Scheduling struct {
 }
 
 type InstanceMetadata struct {
-	Kind  string            `json:"kind"`
-	Items []MetadataItem    `json:"items,omitempty"`
+	Kind  string         `json:"kind"`
+	Items []MetadataItem `json:"items,omitempty"`
 }
 
 type MetadataItem struct {
@@ -150,14 +150,14 @@ type SecurityPolicy struct {
 }
 
 type SecurityPolicyRule struct {
-	Priority    int             `json:"priority"`
-	Action      string          `json:"action"`
-	Description string          `json:"description,omitempty"`
-	Match       *RuleMatch      `json:"match,omitempty"`
+	Priority    int        `json:"priority"`
+	Action      string     `json:"action"`
+	Description string     `json:"description,omitempty"`
+	Match       *RuleMatch `json:"match,omitempty"`
 }
 
 type RuleMatch struct {
-	VersionedExpr string `json:"versionedExpr,omitempty"` // SRC_IPS_V1
+	VersionedExpr string           `json:"versionedExpr,omitempty"` // SRC_IPS_V1
 	Config        *RuleMatchConfig `json:"config,omitempty"`
 }
 
@@ -173,8 +173,8 @@ type FirewallRule struct {
 	Description       string          `json:"description,omitempty"`
 	Network           string          `json:"network"`
 	Priority          int             `json:"priority"`
-	Direction         string          `json:"direction"`   // INGRESS, EGRESS
-	Action            string          `json:"action"`      // allow, deny
+	Direction         string          `json:"direction"` // INGRESS, EGRESS
+	Action            string          `json:"action"`    // allow, deny
 	SourceRanges      []string        `json:"sourceRanges,omitempty"`
 	DestinationRanges []string        `json:"destinationRanges,omitempty"`
 	Allowed           []FirewallAllow `json:"allowed,omitempty"`
@@ -199,10 +199,10 @@ type API struct {
 	mu               sync.RWMutex
 	opMgr            *orchestrator.OperationManager
 	svcMgr           *orchestrator.ServiceManager
-	instances        map[string]*Instance        // key: project+":"+zone+":"+name
-	networks         map[string]*Network         // key: project+":"+name
-	securityPolicies map[string]*SecurityPolicy  // key: project+":"+name
-	firewalls        map[string]*FirewallRule     // key: project+":"+name
+	instances        map[string]*Instance       // key: project+":"+zone+":"+name
+	networks         map[string]*Network        // key: project+":"+name
+	securityPolicies map[string]*SecurityPolicy // key: project+":"+name
+	firewalls        map[string]*FirewallRule   // key: project+":"+name
 }
 
 // NewAPI builds the Compute shim with the shared LRO manager and service manager.
@@ -224,7 +224,7 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 func (api *API) ListProjects() []string {
 	api.mu.RLock()
 	defer api.mu.RUnlock()
-	
+
 	projects := make(map[string]bool)
 	for _, inst := range api.instances {
 		if inst.project != "" {
@@ -239,7 +239,7 @@ func (api *API) ListProjects() []string {
 		p := strings.Split(k, ":")[0]
 		projects[p] = true
 	}
-	
+
 	res := []string{}
 	for p := range projects {
 		res = append(res, p)
@@ -321,20 +321,19 @@ func (api *API) routeInstances(w http.ResponseWriter, r *http.Request, path stri
 // Creates an in-memory instance in PROVISIONING state and kicks off an LRO.
 func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, zone string) {
 	var body struct {
-		Name        string `json:"name"`
-		MachineType string `json:"machineType"`
-		Description string `json:"description"`
-		Labels      map[string]string `json:"labels"`
-		Metadata    *InstanceMetadata `json:"metadata"`
+		Name              string             `json:"name"`
+		MachineType       string             `json:"machineType"`
+		Description       string             `json:"description"`
+		Labels            map[string]string  `json:"labels"`
+		Metadata          *InstanceMetadata  `json:"metadata"`
 		NetworkInterfaces []NetworkInterface `json:"networkInterfaces"`
-		Disks       []AttachedDisk `json:"disks"`
+		Disks             []AttachedDisk     `json:"disks"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		writeError(w, 400, "INVALID_ARGUMENT", "Request body parse error: "+err.Error())
 		return
 	}
-
 
 	name := body.Name
 	if name == "" {
@@ -366,6 +365,15 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 			Network:   fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
 			NetworkIP: "10.128.0.2",
 		}}
+	}
+
+	// GCE requires every network interface to be on a distinct VPC network —
+	// instances.insert (and thus terraform apply) rejects the request outright
+	// rather than attaching only one of the duplicates.
+	if dup := duplicateNetworkInterfaceVPC(netIfaces); dup != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeError(w, 400, "INVALID_ARGUMENT", fmt.Sprintf("Invalid value for field 'resource.networkInterfaces': network %q is used by more than one interface; each interface must be on a different VPC network", dup))
+		return
 	}
 
 	// Default boot disk
@@ -479,23 +487,26 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 		}
 		api.mu.Unlock()
 
-		vpcName := "default"
+		// Build the full list of VPC names, one per network interface, so
+		// ProvisionComputeVM below attaches every network, not just nic0.
+		vpcNames := []string{"default"}
 		api.mu.RLock()
-		if i, ok := api.instances[key]; ok {
-			if len(i.NetworkInterfaces) > 0 {
-				parts := strings.Split(i.NetworkInterfaces[0].Network, "/")
-				if len(parts) > 0 && parts[len(parts)-1] != "" {
-					vpcName = parts[len(parts)-1]
-				}
+		if i, ok := api.instances[key]; ok && len(i.NetworkInterfaces) > 0 {
+			vpcNames = make([]string, len(i.NetworkInterfaces))
+			for j, iface := range i.NetworkInterfaces {
+				vpcNames[j] = networkInterfaceVPCName(iface)
 			}
 		}
 		api.mu.RUnlock()
 
-		allowedPorts := api.getAllowedPortsForVPC(vpcName)
+		// Merge ingress-allow ports across every attached VPC, mirroring how a real
+		// GCE VM inherits firewall rules from all networks it's attached to, not just
+		// the primary one.
+		allowedPorts := orchestrator.MergeUniquePorts(vpcNames, api.getAllowedPortsForVPC)
 
 		// Tell the Orchestrator to physically spin up the Docker container!
-		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcName, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"})
-		
+		err := api.svcMgr.ProvisionComputeVM(containerName, osImage, vpcNames, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"})
+
 		api.mu.Lock()
 		if i, ok := api.instances[key]; ok {
 			if err != nil {
@@ -504,7 +515,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 				api.mu.Unlock()
 				return err
 			}
-			
+
 			// 3. Post-provisioning delay to ensure the UI catches the transition
 			time.Sleep(1500 * time.Millisecond)
 
@@ -530,7 +541,7 @@ func (api *API) getInstance(w http.ResponseWriter, r *http.Request, project, zon
 		writeError(w, 404, "NOT_FOUND", fmt.Sprintf("Instance '%s' not found in zone '%s'", name, zone))
 		return
 	}
-	
+
 	// Deep copy under lock to avoid racing with background updates
 	instCopy := inst.DeepCopy()
 	api.mu.RUnlock()
@@ -542,16 +553,15 @@ func (api *API) getInstance(w http.ResponseWriter, r *http.Request, project, zon
 	}
 	instCopy.HostPorts = api.svcMgr.GetVMPortMappings(cName)
 	if len(instCopy.NetworkInterfaces) > 0 {
-		ip := api.svcMgr.GetContainerIP(cName)
-		if ip == "" {
-			ip = "10.128.0.2" // Fallback to avoid empty IP which can crash some providers
-		}
-		instCopy.NetworkInterfaces[0].NetworkIP = ip
-		if instCopy.NetworkInterfaces[0].Subnetwork == "" {
-			instCopy.NetworkInterfaces[0].Subnetwork = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/default", project, strings.Join(strings.Split(zone, "-")[:2], "-"))
+		api.patchNetworkIPs(instCopy, cName)
+		defaultSubnetwork := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/default", project, strings.Join(strings.Split(zone, "-")[:2], "-"))
+		for j := range instCopy.NetworkInterfaces {
+			if instCopy.NetworkInterfaces[j].Subnetwork == "" {
+				instCopy.NetworkInterfaces[j].Subnetwork = defaultSubnetwork
+			}
 		}
 	}
-	
+
 	if instCopy.Fingerprint == "" {
 		instCopy.Fingerprint = "minisky-mock-fingerprint"
 	}
@@ -562,28 +572,39 @@ func (api *API) getInstance(w http.ResponseWriter, r *http.Request, project, zon
 
 func (api *API) listInstances(w http.ResponseWriter, r *http.Request, project, zone string) {
 	prefix := instanceKey(project, zone, "")
-	api.mu.RLock()
-	defer api.mu.RUnlock()
 
-	items := []*Instance{}
+	// Copy the matching instances under lock, then do the (potentially slow,
+	// blocking) Docker lookups below without holding api.mu — otherwise every
+	// insertInstance/deleteInstance writer stalls for the whole loop.
+	api.mu.RLock()
+	var copies []*Instance
 	for k, v := range api.instances {
 		if strings.HasPrefix(k, prefix) {
-			copyOfInst := v.DeepCopy()
+			copies = append(copies, v.DeepCopy())
+		}
+	}
+	api.mu.RUnlock()
+
+	// Each instance's Docker lookups are independent, so fan them out concurrently
+	// instead of paying N sequential Docker round-trips on a UI-polled endpoint.
+	items := make([]*Instance, len(copies))
+	var wg sync.WaitGroup
+	for idx, copyOfInst := range copies {
+		wg.Add(1)
+		go func(idx int, copyOfInst *Instance) {
+			defer wg.Done()
 			cName := "minisky-vm-" + copyOfInst.Name
 			if copyOfInst.Labels != nil && copyOfInst.Labels["managed-by"] == "gke" {
 				cName = copyOfInst.Name
 			}
 			copyOfInst.HostPorts = api.svcMgr.GetVMPortMappings(cName)
 			if len(copyOfInst.NetworkInterfaces) > 0 {
-				ip := api.svcMgr.GetContainerIP(cName)
-				if ip == "" {
-					ip = "10.128.0.2"
-				}
-				copyOfInst.NetworkInterfaces[0].NetworkIP = ip
+				api.patchNetworkIPs(copyOfInst, cName)
 			}
-			items = append(items, copyOfInst)
-		}
+			items[idx] = copyOfInst
+		}(idx, copyOfInst)
 	}
+	wg.Wait()
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -618,18 +639,18 @@ func (api *API) deleteInstance(w http.ResponseWriter, r *http.Request, project, 
 	containerName := fmt.Sprintf("minisky-vm-%s", name)
 	op := api.opMgr.Register("compute#operation", "delete",
 		selfLinkInstance(project, zone, name), zone, "")
-	
+
 	api.opMgr.RunAsync(op.Name, func() error {
 		// Simulate winding down time
 		time.Sleep(3 * time.Second)
-		
+
 		api.svcMgr.DeleteComputeVM(containerName)
-		
+
 		// Finally remove from memory
 		api.mu.Lock()
 		delete(api.instances, key)
 		api.mu.Unlock()
-		return nil 
+		return nil
 	})
 
 	w.WriteHeader(http.StatusOK)
@@ -823,14 +844,14 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 			api.mu.RLock()
 			n, ok := api.networks[key]
 			api.mu.RUnlock()
-			
+
 			if !ok && name == "default" {
 				// Return a virtual default network
 				n = &Network{
-					Kind: "compute#network",
-					ID: "0",
-					Name: "default",
-					SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
+					Kind:              "compute#network",
+					ID:                "0",
+					Name:              "default",
+					SelfLink:          fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
 					CreationTimestamp: "2024-01-01T00:00:00Z",
 				}
 				ok = true
@@ -857,13 +878,13 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 				}
 			}
 			api.mu.RUnlock()
-			
+
 			if !hasDefault {
 				items = append(items, &Network{
-					Kind: "compute#network",
-					ID: "0",
-					Name: "default",
-					SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
+					Kind:              "compute#network",
+					ID:                "0",
+					Name:              "default",
+					SelfLink:          fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
 					CreationTimestamp: "2024-01-01T00:00:00Z",
 				})
 			}
@@ -1143,7 +1164,11 @@ func (api *API) createFirewall(w http.ResponseWriter, r *http.Request, project s
 	api.firewalls[key] = &body
 	api.mu.Unlock()
 
-	api.svcMgr.RegisterFirewallRule(body.Network, orchestrator.FirewallEntry{
+	// Keyed by the short VPC name, not the full network URL — allowedPortsForVPC and
+	// ApplyFirewallPortsToVPC always look this up by short name (derived via
+	// extractNameFromURL), so registering under the full URL would make the lookup
+	// permanently miss.
+	api.svcMgr.RegisterFirewallRule(extractNameFromURL(body.Network), orchestrator.FirewallEntry{
 		Name:      body.Name,
 		VpcName:   extractNameFromURL(body.Network),
 		Direction: body.Direction,
@@ -1156,7 +1181,7 @@ func (api *API) createFirewall(w http.ResponseWriter, r *http.Request, project s
 	op := api.opMgr.Register("compute#operation", "insert", body.SelfLink, "", "")
 	api.opMgr.RunAsync(op.Name, func() error {
 		api.reapplyFirewallToVPC(body.Network)
-		return nil 
+		return nil
 	})
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(op)
@@ -1226,7 +1251,7 @@ func (api *API) patchFirewall(w http.ResponseWriter, r *http.Request, project, n
 	op := api.opMgr.Register("compute#operation", "patch", result.SelfLink, "", "")
 	api.opMgr.RunAsync(op.Name, func() error {
 		api.reapplyFirewallToVPC(result.Network)
-		return nil 
+		return nil
 	})
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(op)
@@ -1247,11 +1272,11 @@ func (api *API) deleteFirewall(w http.ResponseWriter, project, name string) {
 		writeError(w, 404, "NOT_FOUND", "Firewall "+name+" not found")
 		return
 	}
-	api.svcMgr.RemoveFirewallRule(networkURL, name)
+	api.svcMgr.RemoveFirewallRule(extractNameFromURL(networkURL), name)
 	op := api.opMgr.Register("compute#operation", "delete", "", "", "")
 	api.opMgr.RunAsync(op.Name, func() error {
 		api.reapplyFirewallToVPC(networkURL)
-		return nil 
+		return nil
 	})
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(op)
@@ -1267,6 +1292,63 @@ func extractNameFromURL(urlStr string) string {
 		return parts[len(parts)-1]
 	}
 	return ""
+}
+
+// networkInterfaceVPCName returns the short VPC name a network interface
+// references, normalizing an empty Network field to "default" the same way
+// ProvisionComputeVM's caller does.
+func networkInterfaceVPCName(iface NetworkInterface) string {
+	name := extractNameFromURL(iface.Network)
+	if name == "" {
+		name = "default"
+	}
+	return name
+}
+
+// duplicateNetworkInterfaceVPC returns the VPC name shared by two or more
+// network interfaces, or "" if every interface is on a distinct network. Real
+// GCE requires each interface to be on a different VPC network — attaching
+// two NICs to the same network is rejected by instances.insert rather than
+// silently honoring only one of them.
+func duplicateNetworkInterfaceVPC(ifaces []NetworkInterface) string {
+	seen := make(map[string]bool, len(ifaces))
+	for _, iface := range ifaces {
+		vpc := networkInterfaceVPCName(iface)
+		if seen[vpc] {
+			return vpc
+		}
+		seen[vpc] = true
+	}
+	return ""
+}
+
+// dockerNetworkNameForVPC delegates to orchestrator.DockerNetworkNameForVPC,
+// the single source of truth for the VPC-name <-> Docker-network-name
+// mapping shared with ProvisionComputeVM/ConnectContainerToNetwork/
+// attachedVPCNames.
+func dockerNetworkNameForVPC(vpcName string) string {
+	return orchestrator.DockerNetworkNameForVPC(vpcName)
+}
+
+// patchNetworkIPs fills in each network interface's live container IP on its
+// own Docker network, so a multi-NIC VM reports the correct address per
+// interface instead of collapsing them all onto one. It fetches the
+// container's network info once and reuses it across every interface, rather
+// than issuing one Docker inspect call per NIC.
+func (api *API) patchNetworkIPs(inst *Instance, cName string) {
+	ips, err := api.svcMgr.GetContainerNetworks(cName)
+	for j := range inst.NetworkInterfaces {
+		vpcName := extractNameFromURL(inst.NetworkInterfaces[j].Network)
+		dockerNetworkName := dockerNetworkNameForVPC(vpcName)
+		ip := ""
+		if err == nil {
+			ip = ips[dockerNetworkName]
+		}
+		if ip == "" {
+			ip = "10.128.0.2" // Fallback to avoid empty IP which can crash some providers
+		}
+		inst.NetworkInterfaces[j].NetworkIP = ip
+	}
 }
 
 func (api *API) getAllowedPortsForVPC(vpcName string) []string {
@@ -1290,26 +1372,31 @@ func (api *API) reapplyFirewallToVPC(networkURL string) {
 	vpcName := extractNameFromURL(networkURL)
 	var containerNames []string
 	var osImages []string
-	
+
 	api.mu.RLock()
 	for _, inst := range api.instances {
-		if len(inst.NetworkInterfaces) > 0 {
-			nw := extractNameFromURL(inst.NetworkInterfaces[0].Network)
+		matchesVPC := false
+		for _, iface := range inst.NetworkInterfaces {
+			nw := extractNameFromURL(iface.Network)
 			if nw == vpcName || (nw == "" && vpcName == "default") {
-				cName := fmt.Sprintf("minisky-vm-%s", inst.Name)
-				containerNames = append(containerNames, cName)
-				img := "ubuntu:latest"
-				for _, d := range inst.Disks {
-					if strings.Contains(strings.ToLower(d.Source), "centos") {
-						img = "centos:latest"
-					}
-				}
-				osImages = append(osImages, img)
+				matchesVPC = true
+				break
 			}
+		}
+		if matchesVPC {
+			cName := fmt.Sprintf("minisky-vm-%s", inst.Name)
+			containerNames = append(containerNames, cName)
+			img := "ubuntu:latest"
+			for _, d := range inst.Disks {
+				if strings.Contains(strings.ToLower(d.Source), "centos") {
+					img = "centos:latest"
+				}
+			}
+			osImages = append(osImages, img)
 		}
 	}
 	api.mu.RUnlock()
-	
+
 	if len(containerNames) > 0 {
 		api.svcMgr.ApplyFirewallPortsToVPC(vpcName, containerNames, osImages)
 	}

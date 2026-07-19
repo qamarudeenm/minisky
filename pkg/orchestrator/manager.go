@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,13 +21,68 @@ import (
 
 const networkName = "minisky-net"
 
+// DockerNetworkNameForVPC maps a VPC name to the Docker network that backs it:
+// "" or "default" is the shared bridge, everything else gets its own
+// "minisky-vpc-<name>" network. This is the single source of truth for the
+// mapping — every place that needs to go from VPC name to Docker network (or
+// back) should call this or VPCNameForDockerNetwork instead of re-deriving it.
+func DockerNetworkNameForVPC(vpcName string) string {
+	if vpcName == "" || vpcName == "default" {
+		return networkName
+	}
+	return "minisky-vpc-" + vpcName
+}
+
+// VPCNameForDockerNetwork is the inverse of DockerNetworkNameForVPC: given a
+// Docker network name, returns the VPC name it represents, or ("", false) if
+// the network isn't one minisky manages (e.g. Docker's own "bridge" network).
+func VPCNameForDockerNetwork(dockerNet string) (string, bool) {
+	if dockerNet == networkName {
+		return "default", true
+	}
+	if strings.HasPrefix(dockerNet, "minisky-vpc-") {
+		return strings.TrimPrefix(dockerNet, "minisky-vpc-"), true
+	}
+	return "", false
+}
+
+// MergeUniquePorts returns the ports allowed across every given VPC, deduped
+// while preserving first-seen order. portsFor returns the ingress-allow ports
+// for a single VPC (e.g. ServiceManager.allowedPortsForVPC or a shim's
+// getAllowedPortsForVPC), so both orchestrator and shim packages can share
+// this merge logic instead of reimplementing it.
+func MergeUniquePorts(vpcNames []string, portsFor func(string) []string) []string {
+	var merged []string
+	for _, vpc := range vpcNames {
+		merged = append(merged, portsFor(vpc)...)
+	}
+	return dedupStrings(merged)
+}
+
+// dedupStrings removes duplicate entries while preserving first-seen order.
+func dedupStrings(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // ServiceManager handles native REST-driven lifecycle events over the Docker Unix Socket.
 type ServiceManager struct {
 	mu           sync.RWMutex
 	dockerClient *http.Client
 	sockPath     string
-	portRegistry map[string][]PortMapping  // containerName → host ports
+	portRegistry map[string][]PortMapping   // containerName → host ports
 	fwRules      map[string][]FirewallEntry // vpcName → rules
+	vpcRegistry  map[string][]string        // containerName → vpcNames it was last provisioned with
 }
 
 // ContainerConfig describes one backend emulator container.
@@ -60,20 +116,34 @@ type FirewallEntry struct {
 func NewServiceManager() (*ServiceManager, error) {
 	sockPath := resolveDockerSocket()
 	// On Unix, ensure DOCKER_HOST is set if we found a socket
-	if !strings.HasPrefix(sockPath, "//./pipe/") && os.Getenv("DOCKER_HOST") == "" { 
-		os.Setenv("DOCKER_HOST", "unix://"+sockPath); 
+	if !strings.HasPrefix(sockPath, "//./pipe/") && os.Getenv("DOCKER_HOST") == "" {
+		os.Setenv("DOCKER_HOST", "unix://"+sockPath)
 	}
 	log.Printf("[ServiceManager] Docker socket resolved: %s", sockPath)
 	sm := &ServiceManager{
 		sockPath:     sockPath,
 		portRegistry: make(map[string][]PortMapping),
 		fwRules:      make(map[string][]FirewallEntry),
+		vpcRegistry:  make(map[string][]string),
 	}
 	transport := &http.Transport{
 		DialContext: sm.dialDocker,
 	}
 	sm.dockerClient = &http.Client{Transport: transport}
 	return sm, nil
+}
+
+// NewServiceManagerForTesting builds a ServiceManager backed by the given
+// http.RoundTripper instead of a real Docker socket, so other packages' tests
+// can exercise Docker-calling logic (e.g. compute's patchNetworkIPs) without a
+// Docker daemon.
+func NewServiceManagerForTesting(transport http.RoundTripper) *ServiceManager {
+	return &ServiceManager{
+		dockerClient: &http.Client{Transport: transport},
+		portRegistry: make(map[string][]PortMapping),
+		fwRules:      make(map[string][]FirewallEntry),
+		vpcRegistry:  make(map[string][]string),
+	}
 }
 
 // EnsureNetwork creates the isolated minisky-net bridge network if it doesn't exist.
@@ -201,6 +271,10 @@ func (sm *ServiceManager) StopAndRemoveContainer(name string) error {
 		return err
 	}
 	defer respRm.Body.Close()
+	if respRm.StatusCode >= 400 && respRm.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(respRm.Body)
+		return fmt.Errorf("remove container %q rejected %d: %s", name, respRm.StatusCode, b)
+	}
 	return nil
 }
 
@@ -459,9 +533,18 @@ func (sm *ServiceManager) ImageExistsPublic(image string) (bool, error) {
 }
 
 // ProvisionComputeVM actively boots a Data Plane Docker container mimicking a GCE VM.
-func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcName string, ports []string, env []string, cmd []string) error {
-	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpc: %s ports: %d env: %d cmd: %v)", containerName, osImage, vpcName, len(ports), len(env), cmd)
-	
+// It also creates the container on its primary network (vpcNames[0], or
+// "default" if empty). Docker's /containers/create only accepts one network at
+// creation time, so any additional entries in vpcNames are attached afterwards
+// via ConnectContainerToNetwork.
+func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage string, vpcNames []string, ports []string, env []string, cmd []string) error {
+	vpcNames = dedupStrings(vpcNames)
+	primaryVpc := "default"
+	if len(vpcNames) > 0 {
+		primaryVpc = vpcNames[0]
+	}
+	log.Printf("[Orchestrator] Provisioning compute VM: %s (image: %s vpcs: %v ports: %d env: %d cmd: %v)", containerName, osImage, vpcNames, len(ports), len(env), cmd)
+
 	exists, err := sm.ImageExistsPublic(osImage)
 	if err != nil {
 		log.Printf("[Orchestrator] Image check error for %s: %v", osImage, err)
@@ -474,10 +557,7 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 		log.Printf("[Orchestrator] Image '%s' already exists locally, skipping pull.", osImage)
 	}
 
-	netMode := networkName
-	if vpcName != "" && vpcName != "default" {
-		netMode = "minisky-vpc-" + vpcName
-	}
+	netMode := DockerNetworkNameForVPC(primaryVpc)
 
 	exposedPorts := make(map[string]interface{})
 	portBindings := make(map[string]interface{})
@@ -507,29 +587,63 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 	url := fmt.Sprintf("http://localhost/containers/create?name=%s", containerName)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := sm.dockerClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict { // 409
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("vm creation rejected %d: %s", resp.StatusCode, b)
 	}
 
+	// From here on, GCE's instances.insert is atomic — a VM either comes up fully
+	// or doesn't get created at all — so any failure rolls the container back
+	// rather than leaving a half-provisioned container behind.
 	if err := sm.startContainer(containerName); err != nil {
-		return err
+		if rmErr := sm.StopAndRemoveContainer(containerName); rmErr != nil {
+			log.Printf("[Orchestrator] rollback of '%s' after start failure failed: %v", containerName, rmErr)
+		}
+		return fmt.Errorf("start container %q: %v", containerName, err)
 	}
-	
+
+	// Attach every network past the primary one now that the container exists.
+	// A failed attach here rolls the container back the same way, rather than
+	// leaving it half-attached. ConnectContainerToNetwork tolerates the container already being a
+	// member of the target network, so a retried/duplicate call for the same
+	// containerName+vpcNames (e.g. a retried insert, or a firewall-triggered recreate
+	// whose preceding delete didn't fully take effect) is idempotent and won't roll
+	// back an otherwise-healthy container.
+	var extraVPCs []string
+	if len(vpcNames) > 0 {
+		extraVPCs = vpcNames[1:]
+	}
+	for _, extra := range extraVPCs {
+		if err := sm.ConnectContainerToNetwork(containerName, extra); err != nil {
+			if rmErr := sm.StopAndRemoveContainer(containerName); rmErr != nil {
+				log.Printf("[Orchestrator] rollback of '%s' failed: %v", containerName, rmErr)
+			}
+			return fmt.Errorf("attach network %q: %v", extra, err)
+		}
+	}
+
+	finalVPCNames := vpcNames
+	if len(finalVPCNames) == 0 {
+		finalVPCNames = []string{"default"}
+	}
+	sm.mu.Lock()
+	sm.vpcRegistry[containerName] = finalVPCNames
+	sm.mu.Unlock()
+
 	return sm.updatePortRegistry(containerName)
 }
 
 // ProvisionCloudSQLVM starts a fully-interactive PostgreSQL or MySQL docker database data plane.
 func (sm *ServiceManager) ProvisionBuildStep(containerName string, image string, binds []string, env []string, cmd []string) error {
 	log.Printf("[Orchestrator] Provisioning build step: %s (image: %s binds: %v cmd: %v)", containerName, image, binds, cmd)
-	
+
 	exists, _ := sm.ImageExistsPublic(image)
 	if !exists {
 		sm.pullImageInternal(image)
@@ -555,13 +669,13 @@ func (sm *ServiceManager) ProvisionBuildStep(containerName string, image string,
 	url := fmt.Sprintf("http://localhost/containers/create?name=%s", containerName)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := sm.dockerClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("build step creation rejected %d: %s", resp.StatusCode, b)
@@ -591,8 +705,8 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 		if image == "" {
 			image = reg.Sql.Postgres.DefaultImage
 		}
-		env = append(sm.standardEnv(), 
-			"POSTGRES_PASSWORD=" + rootPassword,
+		env = append(sm.standardEnv(),
+			"POSTGRES_PASSWORD="+rootPassword,
 			"PGDATA=/var/lib/postgresql/data",
 		)
 		expPort = "5432/tcp"
@@ -614,7 +728,7 @@ func (sm *ServiceManager) ProvisionCloudSQLVM(instanceName string, version strin
 		if image == "" {
 			image = reg.Sql.Mysql.DefaultImage
 		}
-		env = append(sm.standardEnv(), "MYSQL_ROOT_PASSWORD=" + rootPassword)
+		env = append(sm.standardEnv(), "MYSQL_ROOT_PASSWORD="+rootPassword)
 		expPort = "3306/tcp"
 	} else {
 		return "", fmt.Errorf("unsupported database version: %s", version)
@@ -722,7 +836,7 @@ func (sm *ServiceManager) DeleteCloudSQLVM(instanceName string) error {
 // DeleteComputeVM permanently destroys a physical Data Plane compute instance.
 func (sm *ServiceManager) DeleteComputeVM(containerName string) error {
 	log.Printf("[Orchestrator] Tearing down Data Plane VM: %s", containerName)
-	
+
 	stopURL := fmt.Sprintf("http://localhost/containers/%s/stop?t=2", containerName)
 	req, _ := http.NewRequest("POST", stopURL, nil)
 	sm.dockerClient.Do(req)
@@ -734,6 +848,10 @@ func (sm *ServiceManager) DeleteComputeVM(containerName string) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remove container %q rejected %d: %s", containerName, resp.StatusCode, b)
+	}
 	return nil
 }
 
@@ -754,7 +872,7 @@ func (sm *ServiceManager) ProvisionServerlessVM(resourceName string, image strin
 			expPort: struct{}{},
 		},
 		"HostConfig": map[string]interface{}{
-			"NetworkMode":  networkName,
+			"NetworkMode": networkName,
 			"PortBindings": map[string]interface{}{
 				expPort: []map[string]string{
 					{"HostIp": "127.0.0.1", "HostPort": "0"},
@@ -817,9 +935,9 @@ func (sm *ServiceManager) fetchLogs(url string) (string, error) {
 		return "Log source not found.", nil
 	}
 
-	// Docker logs stream format: [8]byte header + payload. 
+	// Docker logs stream format: [8]byte header + payload.
 	body, _ := io.ReadAll(resp.Body)
-	
+
 	// Quick header strip for standard docker logs stream headers (8 bytes)
 	var result strings.Builder
 	for i := 0; i < len(body); {
@@ -886,7 +1004,7 @@ func (sm *ServiceManager) RunCommandInContainer(name string, cmd []string) (stri
 
 	// 3. Collect output (Docker stream format)
 	rawOutput, _ := io.ReadAll(startResp.Body)
-	
+
 	// Helper to strip headers
 	var result strings.Builder
 	for i := 0; i < len(rawOutput); {
@@ -997,7 +1115,7 @@ func (sm *ServiceManager) waitUntilReady(addr string, timeout time.Duration) err
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (sm *ServiceManager) CreateVPCNetwork(ctx context.Context, name string) error {
-	netName := "minisky-vpc-" + name
+	netName := DockerNetworkNameForVPC(name)
 	log.Printf("[Orchestrator] Creating VPC Docker network '%s'", netName)
 	payload := map[string]interface{}{
 		"Name":   netName,
@@ -1020,7 +1138,7 @@ func (sm *ServiceManager) CreateVPCNetwork(ctx context.Context, name string) err
 }
 
 func (sm *ServiceManager) DeleteVPCNetwork(ctx context.Context, name string) error {
-	netName := "minisky-vpc-" + name
+	netName := DockerNetworkNameForVPC(name)
 	log.Printf("[Orchestrator] Deleting VPC Docker network '%s'", netName)
 	req, _ := http.NewRequestWithContext(ctx, "DELETE", "http://localhost/networks/"+netName, nil)
 	resp, err := sm.dockerClient.Do(req)
@@ -1038,22 +1156,50 @@ func (sm *ServiceManager) DeleteVPCNetwork(ctx context.Context, name string) err
 // Level 2: Port Binding & Firewall Re-application
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (sm *ServiceManager) updatePortRegistry(containerName string) error {
-	resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", containerName))
-	if err != nil {
-		return err
+// containerInspectInfo is the subset of Docker's container-inspect response
+// (GET /containers/{name}/json) that ServiceManager cares about. Every
+// caller that needs it goes through inspectContainer instead of issuing its
+// own HTTP call + decode, so the non-2xx status check only has to live in
+// one place.
+type containerInspectInfo struct {
+	HostConfig struct {
+		NetworkMode string
 	}
-	defer resp.Body.Close()
-
-	var info struct {
-		NetworkSettings struct {
-			Ports map[string][]struct {
-				HostIp   string
-				HostPort string
-			}
+	NetworkSettings struct {
+		Networks map[string]struct {
+			IPAddress string
+		}
+		Ports map[string][]struct {
+			HostIp   string
+			HostPort string
 		}
 	}
+}
+
+// inspectContainer fetches and decodes a container's Docker inspect response.
+// It returns an error for both connection failures and non-2xx responses —
+// a 404/5xx JSON error body would otherwise decode "successfully" into a
+// zero-valued containerInspectInfo, masking the failure as an empty result.
+func (sm *ServiceManager) inspectContainer(containerName string) (*containerInspectInfo, error) {
+	resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", containerName))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("inspect %q failed %d: %s", containerName, resp.StatusCode, b)
+	}
+	var info containerInspectInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+func (sm *ServiceManager) updatePortRegistry(containerName string) error {
+	info, err := sm.inspectContainer(containerName)
+	if err != nil {
 		return err
 	}
 
@@ -1086,26 +1232,107 @@ func (sm *ServiceManager) GetVMPortMappings(containerName string) []PortMapping 
 }
 
 func (sm *ServiceManager) ApplyFirewallPortsToVPC(vpcName string, containerNames []string, osImages []string) error {
-	allowedPorts := []string{}
+	log.Printf("[Orchestrator] Applying firewall change for VPC '%s' (recreating %d VMs)", vpcName, len(containerNames))
+	for i, cName := range containerNames {
+		osImage := osImages[i]
+
+		// Capture every network cName is currently attached to before tearing it
+		// down. Prefer what ProvisionComputeVM recorded at provision time
+		// (cheap, no Docker round-trip); fall back to asking Docker directly for
+		// containers minisky doesn't have in-memory state for (e.g. it was
+		// restarted since this container was provisioned).
+		vpcNames := sm.registeredVPCNames(cName)
+		if vpcNames == nil {
+			var err error
+			vpcNames, err = sm.attachedVPCNames(cName)
+			if err != nil {
+				log.Printf("[Orchestrator] could not determine attached VPCs for '%s', skipping firewall recreate to avoid dropping its other network memberships: %v", cName, err)
+				continue
+			}
+		}
+		if len(vpcNames) == 0 {
+			vpcNames = []string{vpcName}
+		}
+
+		// Merge ingress-allow ports across every attached VPC, not just the one
+		// whose rules changed — mirrors how a real GCE VM inherits firewall rules
+		// from every network it's attached to.
+		allowedPorts := MergeUniquePorts(vpcNames, sm.allowedPortsForVPC)
+
+		log.Printf("[Orchestrator] Recreating '%s' with ports %v on vpcs %v", cName, allowedPorts, vpcNames)
+		if err := sm.DeleteComputeVM(cName); err != nil {
+			log.Printf("[Orchestrator] failed to delete '%s' before firewall recreate: %v", cName, err)
+		}
+		if err := sm.ProvisionComputeVM(cName, osImage, vpcNames, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"}); err != nil {
+			log.Printf("[Orchestrator] failed to recreate '%s' after firewall change, it may now be missing: %v", cName, err)
+		}
+	}
+	return nil
+}
+
+// registeredVPCNames returns the VPC names ProvisionComputeVM last recorded
+// for containerName, or nil if minisky has no in-memory record of it.
+func (sm *ServiceManager) registeredVPCNames(containerName string) []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.vpcRegistry[containerName]
+}
+
+// allowedPortsForVPC returns the ingress-allow ports for a single VPC's firewall rules.
+func (sm *ServiceManager) allowedPortsForVPC(vpcName string) []string {
 	sm.mu.RLock()
 	rules := sm.fwRules[vpcName]
 	sm.mu.RUnlock()
 
+	var ports []string
 	for _, r := range rules {
 		if r.Action == "allow" && r.Direction == "INGRESS" {
-			for _, p := range r.Ports {
-				allowedPorts = append(allowedPorts, p)
+			ports = append(ports, r.Ports...)
+		}
+	}
+	return ports
+}
+
+// attachedVPCNames inspects a running container's Docker networks and translates
+// each one back into the VPC name ProvisionComputeVM understands (the inverse of
+// the netMode derivation there), so a firewall-triggered recreate can reattach
+// every network the container had, not just the one whose rules changed.
+//
+// The result is sorted, with the container's original primary network (its
+// HostConfig.NetworkMode at creation time) moved to the front — Docker's own
+// NetworkSettings.Networks is a map, so iterating it directly would make
+// vpcNames[0] (and thus the primary network on the next recreate) change
+// randomly from one call to the next.
+//
+// An error is returned (rather than an empty slice) when the container's
+// networks couldn't be determined, so callers can distinguish "this container
+// legitimately has no recognized VPCs attached" from "we failed to find out" —
+// conflating the two would silently drop VPC membership on a transient
+// Docker API hiccup.
+func (sm *ServiceManager) attachedVPCNames(containerName string) ([]string, error) {
+	info, err := sm.inspectContainer(containerName)
+	if err != nil {
+		return nil, err
+	}
+
+	var vpcNames []string
+	for dockerNet := range info.NetworkSettings.Networks {
+		if vpc, ok := VPCNameForDockerNetwork(dockerNet); ok {
+			vpcNames = append(vpcNames, vpc)
+		}
+	}
+	sort.Strings(vpcNames)
+
+	if primaryVpc, ok := VPCNameForDockerNetwork(info.HostConfig.NetworkMode); ok {
+		for i, v := range vpcNames {
+			if v == primaryVpc {
+				vpcNames[0], vpcNames[i] = vpcNames[i], vpcNames[0]
+				break
 			}
 		}
 	}
 
-	log.Printf("[Orchestrator] Applying firewall ports %v to VPC '%s' (recreating %d VMs)", allowedPorts, vpcName, len(containerNames))
-	for i, cName := range containerNames {
-		osImage := osImages[i]
-		sm.DeleteComputeVM(cName)
-		sm.ProvisionComputeVM(cName, osImage, vpcName, allowedPorts, []string{}, []string{"tail", "-f", "/dev/null"})
-	}
-	return nil
+	return vpcNames, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1137,7 +1364,7 @@ func (sm *ServiceManager) CheckFirewallAllows(vpcName, protocol, port, sourceIP 
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	rules := sm.fwRules[vpcName]
-	
+
 	allowed := false
 	for _, r := range rules {
 		if r.Direction == "INGRESS" {
@@ -1251,42 +1478,81 @@ func (b *bufferedConn) Read(p []byte) (int, error) {
 	return b.r.Read(p)
 }
 
-
-func (sm *ServiceManager) DoDockerRequest(req *http.Request) (*http.Response, error) { 
-	return sm.dockerClient.Do(req) 
+func (sm *ServiceManager) DoDockerRequest(req *http.Request) (*http.Response, error) {
+	return sm.dockerClient.Do(req)
 }
-// GetContainerIP retrieves the internal IP address of a container.
-func (sm *ServiceManager) GetContainerIP(name string) string {
-	resp, err := sm.dockerClient.Get(fmt.Sprintf("http://localhost/containers/%s/json", name))
+
+// GetContainerNetworks fetches a container's Docker network membership in a
+// single inspect call, returning a map of Docker network name -> IP address
+// on that network. Callers that need the IP on more than one network (e.g. a
+// multi-NIC VM) should call this once and look up each network locally,
+// rather than issuing one inspect per network.
+func (sm *ServiceManager) GetContainerNetworks(containerName string) (map[string]string, error) {
+	info, err := sm.inspectContainer(containerName)
 	if err != nil {
-		return ""
+		return nil, err
+	}
+
+	ips := make(map[string]string, len(info.NetworkSettings.Networks))
+	for name, n := range info.NetworkSettings.Networks {
+		ips[name] = n.IPAddress
+	}
+	return ips, nil
+}
+
+// GetContainerIPForNetwork retrieves a container's IP on one specific Docker
+// network, so a multi-NIC VM can report the correct address per interface
+// instead of collapsing every interface onto a single network's IP.
+func (sm *ServiceManager) GetContainerIPForNetwork(containerName string, dockerNetworkName string) (string, error) {
+	ips, err := sm.GetContainerNetworks(containerName)
+	if err != nil {
+		return "", err
+	}
+	return ips[dockerNetworkName], nil
+}
+
+// ConnectContainerToNetwork attaches an already-running container to an additional
+// Docker network. Docker's /containers/create only accepts one network at creation
+// time (see netMode in ProvisionComputeVM above); every network past the first has
+// to be attached after the fact through this endpoint.
+func (sm *ServiceManager) ConnectContainerToNetwork(containerName string, vpcName string) error {
+	dockerNetworkName := DockerNetworkNameForVPC(vpcName)
+	payload := map[string]interface{}{
+		"Container": containerName,
+	}
+	body, _ := json.Marshal(payload)
+	connectUrl := fmt.Sprintf("http://localhost/networks/%s/connect", dockerNetworkName)
+	resp, err := sm.dockerClient.Post(connectUrl, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
-
-	var info struct {
-		NetworkSettings struct {
-			Networks map[string]struct {
-				IPAddress string
-			}
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		// Docker rejects connecting a container that's already a member of the target
+		// network. ProvisionComputeVM's caller can legitimately hit this on a
+		// retried/duplicate provision call for the same containerName+vpcNames — real
+		// GCE APIs are idempotent under retry, so treat "already attached" the same
+		// way: a no-op success, not a failure that should roll back an
+		// otherwise-healthy container.
+		if isAlreadyAttachedError(string(b)) {
+			return nil
 		}
+		return fmt.Errorf("connect failed %d: %s", resp.StatusCode, b)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return ""
-	}
+	return nil
+}
 
-	// Prioritize minisky-net
-	if net, ok := info.NetworkSettings.Networks[networkName]; ok && net.IPAddress != "" {
-		return net.IPAddress
-	}
-
-	// Fallback to first available IP
-	for _, net := range info.NetworkSettings.Networks {
-		if net.IPAddress != "" {
-			return net.IPAddress
-		}
-	}
-
-	return ""
+// isAlreadyAttachedError reports whether a Docker network-connect error body
+// indicates the container is already a member of the target network, rather
+// than a genuine failure (network missing, daemon unreachable, etc.). Docker
+// has mapped this case to different HTTP status codes across engine
+// versions, so the message text is the more stable signal to match on.
+func isAlreadyAttachedError(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "already exists in network") ||
+		strings.Contains(lower, "already connected to network") ||
+		strings.Contains(lower, "endpoint with name")
 }
 
 type ContainerSummary struct {
@@ -1355,8 +1621,8 @@ func (sm *ServiceManager) GetContainerStats(name string) (*ContainerStats, error
 			SystemCPUUsage uint64 `json:"system_cpu_usage"`
 		} `json:"precpu_stats"`
 		MemoryStats struct {
-			Usage    uint64 `json:"usage"`
-			Stats    map[string]uint64 `json:"stats"`
+			Usage uint64            `json:"usage"`
+			Stats map[string]uint64 `json:"stats"`
 		} `json:"memory_stats"`
 	}
 

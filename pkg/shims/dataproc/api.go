@@ -26,13 +26,13 @@ func init() {
 
 // Cluster mirrors the Dataproc v1 Cluster resource.
 type Cluster struct {
-	ProjectId   string        `json:"projectId"`
-	ClusterName string        `json:"clusterName"`
-	ClusterUuid string        `json:"clusterUuid"`
-	Config      ClusterConfig `json:"config"`
-	Status      ClusterStatus `json:"status"`
-	StatusHistory []ClusterStatus `json:"statusHistory,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty"`
+	ProjectId     string            `json:"projectId"`
+	ClusterName   string            `json:"clusterName"`
+	ClusterUuid   string            `json:"clusterUuid"`
+	Config        ClusterConfig     `json:"config"`
+	Status        ClusterStatus     `json:"status"`
+	StatusHistory []ClusterStatus   `json:"statusHistory,omitempty"`
+	Labels        map[string]string `json:"labels,omitempty"`
 }
 
 type ClusterConfig struct {
@@ -42,8 +42,8 @@ type ClusterConfig struct {
 }
 
 type InstanceGroupConfig struct {
-	NumInstances   int    `json:"numInstances"`
-	MachineTypeUri string `json:"machineTypeUri"`
+	NumInstances   int         `json:"numInstances"`
+	MachineTypeUri string      `json:"machineTypeUri"`
 	DiskConfig     *DiskConfig `json:"diskConfig,omitempty"`
 }
 
@@ -64,12 +64,12 @@ type ClusterStatus struct {
 
 // Job mirrors the Dataproc v1 Job resource.
 type Job struct {
-	Reference  JobReference `json:"reference"`
-	Placement  JobPlacement `json:"placement"`
-	Status     JobStatus    `json:"status"`
-	SparkJob   *SparkJob    `json:"sparkJob,omitempty"`
-	PysparkJob *PySparkJob  `json:"pysparkJob,omitempty"`
-	HiveJob    *HiveJob     `json:"hiveJob,omitempty"`
+	Reference  JobReference      `json:"reference"`
+	Placement  JobPlacement      `json:"placement"`
+	Status     JobStatus         `json:"status"`
+	SparkJob   *SparkJob         `json:"sparkJob,omitempty"`
+	PysparkJob *PySparkJob       `json:"pysparkJob,omitempty"`
+	HiveJob    *HiveJob          `json:"hiveJob,omitempty"`
 	Labels     map[string]string `json:"labels,omitempty"`
 }
 
@@ -90,10 +90,10 @@ type JobStatus struct {
 }
 
 type SparkJob struct {
-	MainClass  string   `json:"mainClass,omitempty"`
-	MainJarFileUri string `json:"mainJarFileUri,omitempty"`
-	Args       []string `json:"args,omitempty"`
-	JarFileUris []string `json:"jarFileUris,omitempty"`
+	MainClass      string   `json:"mainClass,omitempty"`
+	MainJarFileUri string   `json:"mainJarFileUri,omitempty"`
+	Args           []string `json:"args,omitempty"`
+	JarFileUris    []string `json:"jarFileUris,omitempty"`
 }
 
 type PySparkJob struct {
@@ -103,8 +103,8 @@ type PySparkJob struct {
 }
 
 type HiveJob struct {
-	QueryList *QueryList `json:"queryList,omitempty"`
-	QueryFileUri string  `json:"queryFileUri,omitempty"`
+	QueryList    *QueryList `json:"queryList,omitempty"`
+	QueryFileUri string     `json:"queryFileUri,omitempty"`
 }
 
 type QueryList struct {
@@ -136,14 +136,15 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 // ServeHTTP dispatches Dataproc v1 paths.
 //
 // Supported paths (dataproc.googleapis.com):
-//   POST   /v1/projects/{project}/regions/{region}/clusters
-//   GET    /v1/projects/{project}/regions/{region}/clusters
-//   GET    /v1/projects/{project}/regions/{region}/clusters/{cluster}
-//   DELETE /v1/projects/{project}/regions/{region}/clusters/{cluster}
-//   POST   /v1/projects/{project}/regions/{region}/jobs:submit
-//   GET    /v1/projects/{project}/regions/{region}/jobs
-//   GET    /v1/projects/{project}/regions/{region}/jobs/{jobId}
-//   GET    /v1/projects/{project}/regions/{region}/operations/{operation}
+//
+//	POST   /v1/projects/{project}/regions/{region}/clusters
+//	GET    /v1/projects/{project}/regions/{region}/clusters
+//	GET    /v1/projects/{project}/regions/{region}/clusters/{cluster}
+//	DELETE /v1/projects/{project}/regions/{region}/clusters/{cluster}
+//	POST   /v1/projects/{project}/regions/{region}/jobs:submit
+//	GET    /v1/projects/{project}/regions/{region}/jobs
+//	GET    /v1/projects/{project}/regions/{region}/jobs/{jobId}
+//	GET    /v1/projects/{project}/regions/{region}/operations/{operation}
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[Shim: Dataproc] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
@@ -190,8 +191,8 @@ func (api *API) routeClusters(w http.ResponseWriter, r *http.Request, path strin
 
 func (api *API) createCluster(w http.ResponseWriter, r *http.Request, project, region string) {
 	var body struct {
-		ClusterName string        `json:"clusterName"`
-		Config      ClusterConfig `json:"config"`
+		ClusterName string            `json:"clusterName"`
+		Config      ClusterConfig     `json:"config"`
 		Labels      map[string]string `json:"labels"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -271,7 +272,7 @@ func (api *API) createCluster(w http.ResponseWriter, r *http.Request, project, r
 		}
 
 		masterName := fmt.Sprintf("minisky-dataproc-%s-m", clusterStr)
-		api.svcMgr.ProvisionComputeVM(masterName, masterImage, "default", reg.Dataproc.MasterPorts, connectivityEnv, []string{"tail", "-f", "/dev/null"})
+		api.svcMgr.ProvisionComputeVM(masterName, masterImage, []string{"default"}, reg.Dataproc.MasterPorts, connectivityEnv, []string{"tail", "-f", "/dev/null"})
 
 		// Provision Worker Nodes
 		numWorkers := 2
@@ -280,7 +281,7 @@ func (api *API) createCluster(w http.ResponseWriter, r *http.Request, project, r
 		}
 		for i := 0; i < numWorkers; i++ {
 			workerName := fmt.Sprintf("minisky-dataproc-%s-w-%d", clusterStr, i)
-			api.svcMgr.ProvisionComputeVM(workerName, masterImage, "default", []string{}, connectivityEnv, []string{"tail", "-f", "/dev/null"})
+			api.svcMgr.ProvisionComputeVM(workerName, masterImage, []string{"default"}, []string{}, connectivityEnv, []string{"tail", "-f", "/dev/null"})
 		}
 
 		api.mu.Lock()
@@ -332,7 +333,7 @@ func (api *API) deleteCluster(w http.ResponseWriter, r *http.Request, project, r
 	cl, ok := api.clusters[key]
 	if ok {
 		cl.Status.State = "DELETING"
-		// Delay actual map deletion to allow UI to see DELETING state briefly, 
+		// Delay actual map deletion to allow UI to see DELETING state briefly,
 		// but since we want to align with previous exact behavior, we just copy properties.
 	}
 	api.mu.Unlock()
@@ -352,8 +353,8 @@ func (api *API) deleteCluster(w http.ResponseWriter, r *http.Request, project, r
 		"https://dataproc.googleapis.com/v1/projects/%s/regions/%s/clusters/%s",
 		project, region, name)
 	op := api.opMgr.Register("dataproc#operation", "DELETE", targetLink, "", region)
-	
-	api.opMgr.RunAsync(op.Name, func() error { 
+
+	api.opMgr.RunAsync(op.Name, func() error {
 		// Teardown physical containers
 		api.svcMgr.DeleteComputeVM(fmt.Sprintf("minisky-dataproc-%s-m", name))
 		for i := 0; i < numWorkers; i++ {
@@ -363,7 +364,7 @@ func (api *API) deleteCluster(w http.ResponseWriter, r *http.Request, project, r
 		api.mu.Lock()
 		delete(api.clusters, key)
 		api.mu.Unlock()
-		return nil 
+		return nil
 	})
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(toLRO(op, project, region))
@@ -436,7 +437,7 @@ func (api *API) submitJob(w http.ResponseWriter, r *http.Request, project, regio
 		api.mu.Unlock()
 
 		masterName := fmt.Sprintf("minisky-dataproc-%s-m", clusterName)
-		
+
 		var cmd []string
 		if j.PysparkJob != nil {
 			cmd = []string{"spark-submit", "--master", "spark://localhost:7077", j.PysparkJob.MainPythonFileUri}
