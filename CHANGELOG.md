@@ -5,6 +5,15 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-08-16
+
+### Added
+- **Multi-VPC compute networking (#4)**: Compute VMs with multiple `networkInterfaces` now attach to a distinct Docker network per interface instead of collapsing every interface onto nic0's network. Firewall rules follow every VPC a VM is attached to (not just its primary NIC), each interface reports its real per-network IP, and network attach / container-start failures roll the container back atomically (matching GCE's "every requested NIC or none" semantics). Contributed by @michaelcatalano17.
+
+### Fixed
+- **Duplicate-VPC interfaces rejected at insert**: `instances.insert` now returns `INVALID_ARGUMENT` when two interfaces reference the same VPC network, matching real GCE validation instead of silently attaching only one.
+- **Firewall rule keying**: Firewall rules are registered under the short VPC name rather than the full network URL, fixing port re-application being silently dropped on VM recreate.
+
 ## [1.3.0] - 2026-08-16
 
 ### Fixed
