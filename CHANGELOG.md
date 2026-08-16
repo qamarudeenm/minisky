@@ -5,6 +5,12 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-16
+
+### Fixed
+- **Cloud Functions / Cloud Run builds on modern Docker (#5)**: MiniSky now negotiates the Docker Engine API version with the running daemon instead of relying on a hardcoded or implicit one. It queries the daemon's `/version`, clamps a preferred version into the daemon-advertised `[MinAPIVersion, ApiVersion]` range, and exports it as `DOCKER_API_VERSION` so the `pack` (Buildpacks) and `kind` subprocesses inherit a version the engine accepts. This resolves `client version 1.38 is too old` on Docker Engine v25+/v26+, and also prevents the inverse "client version too new" failure on older daemons. An explicit user-set `DOCKER_API_VERSION` is honored.
+- **Architecture-aware `pack` installer**: The Buildpacks CLI download URL now includes the CPU architecture, so arm64 hosts (including Apple Silicon) fetch the correct binary instead of the amd64 one. Added a startup warning when the installed `pack` is not the pinned release (e.g. it reports `0.0.0`).
+
 ## [1.2.2] - 2026-05-04
 
 ### Added
