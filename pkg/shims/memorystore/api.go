@@ -29,34 +29,34 @@ func init() {
 }
 
 type Instance struct {
-	Name         string            `json:"name"`
-	DisplayName  string            `json:"displayName,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Tier         string            `json:"tier"` // BASIC, STANDARD_HA
-	MemorySizeGb int               `json:"memorySizeGb"`
-	Host         string            `json:"host"`
-	Port         int               `json:"port"`
-	State        string            `json:"state"` // CREATING, READY, DELETING, REPAIRING, MAINTENANCE
-	CreateTime   string            `json:"createTime"`
-	LocationId   string            `json:"locationId"`
-	AlternativeLocationId string    `json:"alternativeLocationId,omitempty"`
-	AuthorizedNetwork     string    `json:"authorizedNetwork,omitempty"`
+	Name                  string             `json:"name"`
+	DisplayName           string             `json:"displayName,omitempty"`
+	Labels                map[string]string  `json:"labels,omitempty"`
+	Tier                  string             `json:"tier"` // BASIC, STANDARD_HA
+	MemorySizeGb          int                `json:"memorySizeGb"`
+	Host                  string             `json:"host"`
+	Port                  int                `json:"port"`
+	State                 string             `json:"state"` // CREATING, READY, DELETING, REPAIRING, MAINTENANCE
+	CreateTime            string             `json:"createTime"`
+	LocationId            string             `json:"locationId"`
+	AlternativeLocationId string             `json:"alternativeLocationId,omitempty"`
+	AuthorizedNetwork     string             `json:"authorizedNetwork,omitempty"`
 	PersistenceConfig     *PersistenceConfig `json:"persistenceConfig,omitempty"`
-	EngineVersion         string    `json:"engineVersion,omitempty"` // REDIS_6_X, MEMCACHED_1_5, etc.
+	EngineVersion         string             `json:"engineVersion,omitempty"` // REDIS_6_X, MEMCACHED_1_5, etc.
 }
 
 type PersistenceConfig struct {
-	PersistenceMode    string `json:"persistenceMode"` // DISABLED, RDB
-	RdbSnapshotPeriod  string `json:"rdbSnapshotPeriod,omitempty"`
+	PersistenceMode   string `json:"persistenceMode"` // DISABLED, RDB
+	RdbSnapshotPeriod string `json:"rdbSnapshotPeriod,omitempty"`
 }
 
 type API struct {
-	mu       sync.RWMutex
-	opMgr    *orchestrator.OperationManager
-	svcMgr   *orchestrator.ServiceManager
-	logAPI   *logging.API
+	mu     sync.RWMutex
+	opMgr  *orchestrator.OperationManager
+	svcMgr *orchestrator.ServiceManager
+	logAPI *logging.API
 	// map[projectId]map[instanceId]*Instance
-	redisInstances map[string]map[string]*Instance
+	redisInstances    map[string]map[string]*Instance
 	memcacheInstances map[string]map[string]*Instance
 }
 
@@ -83,9 +83,9 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Routing for Redis and Memcached
 	// Paths typically look like: /v1/projects/{project}/locations/{location}/instances
-	
+
 	isRedis := strings.Contains(r.Host, "redis")
-	
+
 	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/instances") {
 		api.handleListInstances(w, r, isRedis)
 		return
@@ -135,7 +135,7 @@ func (api *API) handleListInstances(w http.ResponseWriter, r *http.Request, isRe
 func (api *API) handleGetInstance(w http.ResponseWriter, r *http.Request, isRedis bool) {
 	project := extractProject(r.URL.Path)
 	instanceId := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
-	
+
 	api.mu.RLock()
 	defer api.mu.RUnlock()
 
@@ -160,7 +160,7 @@ func (api *API) handleGetInstance(w http.ResponseWriter, r *http.Request, isRedi
 
 func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isRedis bool) {
 	var req struct {
-		InstanceId string `json:"instanceId"`
+		InstanceId string   `json:"instanceId"`
 		Instance   Instance `json:"instance"`
 	}
 	// Google Cloud API sometimes passes instanceId as a query param
@@ -217,7 +217,9 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 			vparts := strings.Split(v, "_")
 			if len(vparts) > 1 {
 				targetV := vparts[1]
-				if len(vparts) > 2 { targetV += "." + vparts[2] }
+				if len(vparts) > 2 {
+					targetV += "." + vparts[2]
+				}
 				for _, mv := range reg.Memorystore.Redis.Versions {
 					if strings.HasPrefix(mv.Version, targetV) {
 						image = mv.Image
@@ -232,10 +234,10 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 			image = reg.Memorystore.Memcached.DefaultImage
 			containerPrefix = "memcache"
 		}
-		
+
 		containerName := fmt.Sprintf("minisky-%s-%s", containerPrefix, id)
-		err := api.svcMgr.ProvisionComputeVM(containerName, image, "default", []string{fmt.Sprintf("%d", req.Instance.Port)}, []string{}, nil)
-		
+		err := api.svcMgr.ProvisionComputeVM(containerName, image, []string{"default"}, []string{fmt.Sprintf("%d", req.Instance.Port)}, []string{}, nil)
+
 		api.mu.Lock()
 		if err != nil {
 			req.Instance.State = "REPAIRING"
@@ -243,7 +245,7 @@ func (api *API) handleCreateInstance(w http.ResponseWriter, r *http.Request, isR
 		} else {
 			req.Instance.State = "READY"
 			api.pushLog(project, "INFO", id, fmt.Sprintf("Instance %s is now READY", id))
-			
+
 			// Retrieve the dynamic host port assigned by Docker
 			containerPort := "6379/tcp"
 			if !isRedis {
@@ -302,7 +304,7 @@ func (api *API) handleDeleteInstance(w http.ResponseWriter, r *http.Request, isR
 		}
 		containerName := fmt.Sprintf("minisky-%s-%s", containerPrefix, id)
 		api.svcMgr.DeleteComputeVM(containerName)
-		
+
 		api.mu.Lock()
 		sourceMap := api.redisInstances
 		if !isRedis {
