@@ -195,7 +195,7 @@ func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManage
 		opMgr:     opMgr,
 		svcMgr:    sm,
 		logger:    logger,
-		backend:   NewBuildpacksBackend(),
+		backend:   NewBuildpacksBackend(sm.APIVersion()),
 		functions: make(map[string]*Function),
 		services:  make(map[string]*Service),
 	}

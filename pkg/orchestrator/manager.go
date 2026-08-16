@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,12 +21,19 @@ import (
 
 const networkName = "minisky-net"
 
+// PreferredDockerAPIVersion is the Docker Engine API version MiniSky targets by
+// default. It is clamped at runtime into the range the running daemon actually
+// supports (see negotiateAPIVersion), so it acts only as a preference, never a
+// hard requirement.
+const PreferredDockerAPIVersion = "1.44"
+
 // ServiceManager handles native REST-driven lifecycle events over the Docker Unix Socket.
 type ServiceManager struct {
 	mu           sync.RWMutex
 	dockerClient *http.Client
 	sockPath     string
-	portRegistry map[string][]PortMapping  // containerName → host ports
+	apiVersion   string                     // negotiated Docker Engine API version
+	portRegistry map[string][]PortMapping   // containerName → host ports
 	fwRules      map[string][]FirewallEntry // vpcName → rules
 }
 
@@ -73,7 +81,95 @@ func NewServiceManager() (*ServiceManager, error) {
 		DialContext: sm.dialDocker,
 	}
 	sm.dockerClient = &http.Client{Transport: transport}
+
+	// Negotiate a Docker Engine API version the running daemon actually supports.
+	// Modern engines (v26+) reject legacy client versions (e.g. 1.38), while older
+	// daemons reject versions newer than they understand. Clamping to the daemon's
+	// reported [MinAPIVersion, ApiVersion] range avoids both failure modes and is
+	// inherited by child tools (pack, kind) via the DOCKER_API_VERSION env var.
+	sm.apiVersion = sm.negotiateAPIVersion()
+	if os.Getenv("DOCKER_API_VERSION") == "" {
+		os.Setenv("DOCKER_API_VERSION", sm.apiVersion)
+		log.Printf("[ServiceManager] DOCKER_API_VERSION set to %s", sm.apiVersion)
+	} else {
+		sm.apiVersion = os.Getenv("DOCKER_API_VERSION")
+		log.Printf("[ServiceManager] DOCKER_API_VERSION respected from environment: %s", sm.apiVersion)
+	}
 	return sm, nil
+}
+
+// APIVersion returns the negotiated Docker Engine API version.
+func (sm *ServiceManager) APIVersion() string { return sm.apiVersion }
+
+// negotiateAPIVersion asks the daemon which API versions it supports (via the
+// always-unversioned /version endpoint) and clamps PreferredDockerAPIVersion
+// into the daemon-reported [MinAPIVersion, ApiVersion] range. If the daemon
+// cannot be reached it falls back to PreferredDockerAPIVersion.
+func (sm *ServiceManager) negotiateAPIVersion() string {
+	negotiated := PreferredDockerAPIVersion
+
+	resp, err := sm.dockerClient.Get("http://localhost/version")
+	if err != nil {
+		log.Printf("[ServiceManager] Could not query Docker /version (%v); defaulting API version to %s", err, negotiated)
+		return negotiated
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[ServiceManager] Docker /version returned %d; defaulting API version to %s", resp.StatusCode, negotiated)
+		return negotiated
+	}
+
+	var info struct {
+		ApiVersion    string `json:"ApiVersion"`
+		MinAPIVersion string `json:"MinAPIVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		log.Printf("[ServiceManager] Could not decode Docker /version (%v); defaulting API version to %s", err, negotiated)
+		return negotiated
+	}
+
+	// Clamp down to the daemon max to avoid "client version X is too new".
+	if info.ApiVersion != "" && compareAPIVersions(negotiated, info.ApiVersion) > 0 {
+		negotiated = info.ApiVersion
+	}
+	// Clamp up to the daemon min to avoid "client version X is too old".
+	if info.MinAPIVersion != "" && compareAPIVersions(negotiated, info.MinAPIVersion) < 0 {
+		negotiated = info.MinAPIVersion
+	}
+
+	log.Printf("[ServiceManager] Docker API negotiated: %s (daemon supports %s … %s)", negotiated, info.MinAPIVersion, info.ApiVersion)
+	return negotiated
+}
+
+// compareAPIVersions compares two "major.minor" Docker API version strings.
+// It returns -1 if a < b, 0 if equal, and 1 if a > b.
+func compareAPIVersions(a, b string) int {
+	aMajor, aMinor := parseAPIVersion(a)
+	bMajor, bMinor := parseAPIVersion(b)
+	switch {
+	case aMajor != bMajor:
+		if aMajor < bMajor {
+			return -1
+		}
+		return 1
+	case aMinor != bMinor:
+		if aMinor < bMinor {
+			return -1
+		}
+		return 1
+	default:
+		return 0
+	}
+}
+
+func parseAPIVersion(v string) (major, minor int) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	parts := strings.SplitN(v, ".", 2)
+	major, _ = strconv.Atoi(parts[0])
+	if len(parts) > 1 {
+		minor, _ = strconv.Atoi(parts[1])
+	}
+	return major, minor
 }
 
 // EnsureNetwork creates the isolated minisky-net bridge network if it doesn't exist.

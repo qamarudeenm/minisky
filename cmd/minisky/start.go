@@ -40,10 +40,7 @@ var startCmd = &cobra.Command{
 	Short: "Starts the MiniSky Daemon and API Router",
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Printf("Starting MiniSky Daemon (API :%s, UI :%s)...", apiPort, uiPort)
-		if os.Getenv("DOCKER_API_VERSION") == "" { 
-			os.Setenv("DOCKER_API_VERSION", "1.44"); 
-		}
-		
+
 		// Ensure the directory exists
 		miniskyDir := config.GetMiniskyDir()
 

@@ -36,18 +36,21 @@ import (
 
 // BuildpacksBackend manages local container builds via Google Cloud Buildpacks.
 type BuildpacksBackend struct {
-	enabled  bool
-	builder  string // Buildpacks builder image to use
-	logStore map[string]*bytes.Buffer
-	logMu    sync.RWMutex
+	enabled    bool
+	builder    string // Buildpacks builder image to use
+	apiVersion string // Docker Engine API version negotiated with the daemon
+	logStore   map[string]*bytes.Buffer
+	logMu      sync.RWMutex
 }
 
 // DefaultBuilder is the Google-24 stack builder that mirrors GCP's latest build environment.
 const DefaultBuilder = "gcr.io/buildpacks/builder:google-24"
 
 // NewBuildpacksBackend returns a BuildpacksBackend. Only active when
-// MINISKY_SERVERLESS_BACKEND=buildpacks is set.
-func NewBuildpacksBackend() *BuildpacksBackend {
+// MINISKY_SERVERLESS_BACKEND=buildpacks is set. apiVersion is the Docker Engine
+// API version negotiated with the running daemon; it is passed to the `pack`
+// subprocess so its embedded Docker client speaks a version the daemon accepts.
+func NewBuildpacksBackend(apiVersion string) *BuildpacksBackend {
 	enabled := strings.EqualFold(os.Getenv("MINISKY_SERVERLESS_BACKEND"), "buildpacks")
 	builder := os.Getenv("MINISKY_BUILDPACKS_BUILDER")
 	if builder == "" {
@@ -55,9 +58,10 @@ func NewBuildpacksBackend() *BuildpacksBackend {
 	}
 
 	b := &BuildpacksBackend{
-		enabled:  enabled,
-		builder:  builder,
-		logStore: make(map[string]*bytes.Buffer),
+		enabled:    enabled,
+		builder:    builder,
+		apiVersion: apiVersion,
+		logStore:   make(map[string]*bytes.Buffer),
 	}
 
 	if enabled {
@@ -74,10 +78,23 @@ func NewBuildpacksBackend() *BuildpacksBackend {
 		}
 
 		if b.enabled {
-			log.Printf("[Buildpacks] ✅ Buildpacks integration ENABLED (builder: %s)", builder)
+			ver := detectPackVersion(binPath)
+			if ver == "" || strings.HasPrefix(ver, "0.0.0") {
+				log.Printf("[Buildpacks] ⚠️  'pack' at %s reports version %q, not the pinned %s release. It may be a locally built or wrong-arch binary; reinstall via MiniSky to get the official CLI.", binPath, ver, orchestrator.PackVersion)
+			}
+			log.Printf("[Buildpacks] ✅ Buildpacks integration ENABLED (pack %s, builder: %s)", ver, builder)
 		}
 	}
 	return b
+}
+
+// detectPackVersion returns the first line of `pack version`, or "" on failure.
+func detectPackVersion(binPath string) string {
+	out, err := exec.Command(binPath, "version").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
 }
 
 // Enabled reports whether Buildpacks backend is active.
@@ -111,6 +128,24 @@ func (b *BuildpacksBackend) GetLogs(name string) string {
 	return ""
 }
 
+// buildEnv returns the environment for the `pack` subprocess, ensuring
+// DOCKER_API_VERSION carries the daemon-negotiated version so pack's embedded
+// Docker client speaks a version the engine accepts. An explicit value already
+// present in the environment (user override or daemon-set) is preserved.
+func (b *BuildpacksBackend) buildEnv() []string {
+	env := os.Environ()
+	for _, e := range env {
+		if strings.HasPrefix(e, "DOCKER_API_VERSION=") {
+			return env
+		}
+	}
+	version := b.apiVersion
+	if version == "" {
+		version = orchestrator.PreferredDockerAPIVersion
+	}
+	return append(env, "DOCKER_API_VERSION="+version)
+}
+
 // BuildFunction builds a Docker image for a Cloud Function source directory.
 func (b *BuildpacksBackend) BuildFunction(functionName, sourcePath, entryPoint string) (imageRef string, err error) {
 	if !b.enabled {
@@ -129,12 +164,9 @@ func (b *BuildpacksBackend) BuildFunction(functionName, sourcePath, entryPoint s
 	// Force shell to see the version and allow internet access for dependencies
 	// Crucially, we pass GOOGLE_FUNCTION_TARGET at build time so the buildpacks 
 	// can generate the correct entrypoint metadata.
-	cmdArgs := []string{"-c", fmt.Sprintf("DOCKER_API_VERSION=1.44 %s build %s --path %s --builder %s --trust-builder --network host --env GOOGLE_FUNCTION_TARGET=%s --env GOOGLE_FUNCTION_SIGNATURE_TYPE=http", binPath, imageRef, sourcePath, b.builder, entryPoint)}
+	cmdArgs := []string{"-c", fmt.Sprintf("%s build %s --path %s --builder %s --trust-builder --network host --env GOOGLE_FUNCTION_TARGET=%s --env GOOGLE_FUNCTION_SIGNATURE_TYPE=http", binPath, imageRef, sourcePath, b.builder, entryPoint)}
 	cmd := exec.Command("sh", cmdArgs...)
-	cmd.Env = os.Environ()
-	if os.Getenv("DOCKER_API_VERSION") == "" {
-		cmd.Env = append(cmd.Env, "DOCKER_API_VERSION=1.44")
-	}
+	cmd.Env = b.buildEnv()
 
 	buf := new(bytes.Buffer)
 	b.logMu.Lock()
@@ -166,12 +198,9 @@ func (b *BuildpacksBackend) BuildService(serviceName, sourcePath string) (imageR
 		binPath = localPack
 	}
 
-	cmdArgs := []string{"-c", fmt.Sprintf("DOCKER_API_VERSION=1.44 %s build %s --path %s --builder %s --trust-builder --network host --env PORT=8080", binPath, imageRef, sourcePath, b.builder)}
+	cmdArgs := []string{"-c", fmt.Sprintf("%s build %s --path %s --builder %s --trust-builder --network host --env PORT=8080", binPath, imageRef, sourcePath, b.builder)}
 	cmd := exec.Command("sh", cmdArgs...)
-	cmd.Env = os.Environ()
-	if os.Getenv("DOCKER_API_VERSION") == "" {
-		cmd.Env = append(cmd.Env, "DOCKER_API_VERSION=1.44")
-	}
+	cmd.Env = b.buildEnv()
 
 	buf := new(bytes.Buffer)
 	b.logMu.Lock()

@@ -54,19 +54,36 @@ func (sm *ServiceManager) InstallDependency(id string) error {
 		binaryName := "pack"
 		ext := "tgz"
 		isArchive = true
-		if osName == "windows" {
+
+		// pack release assets are named pack-<ver>-<os>[-<arch>].<ext>, where the
+		// arch suffix is OMITTED for amd64 and REQUIRED for every other arch
+		// (e.g. -arm64, -ppc64le, -s390x). The OS token is linux/macos/windows.
+		// The previous URL dropped the arch entirely, so arm64 hosts (incl. Apple
+		// Silicon) fetched the amd64 binary.
+		packOS := "linux"
+		archSuffix := ""
+		switch osName {
+		case "windows":
 			binaryName = "pack.exe"
 			ext = "zip"
-		} else if osName == "darwin" {
-			ext = "tgz"
-			osName = "macos" // pack uses 'macos' in URL
+			packOS = "windows" // pack only publishes windows amd64
+		case "darwin":
+			packOS = "macos"
+			if arch != "amd64" {
+				archSuffix = "-" + arch
+			}
+		default:
+			packOS = "linux"
+			if arch != "amd64" {
+				archSuffix = "-" + arch
+			}
 		}
-		
+
 		dep = Dependency{
 			ID:          "pack",
 			Name:        binaryName,
 			Description: "Buildpacks CLI - Source-to-Image tool",
-			DownloadURL: fmt.Sprintf("https://github.com/buildpacks/pack/releases/download/%s/pack-%s-%s.%s", PackVersion, PackVersion, osName, ext),
+			DownloadURL: fmt.Sprintf("https://github.com/buildpacks/pack/releases/download/%s/pack-%s-%s%s.%s", PackVersion, PackVersion, packOS, archSuffix, ext),
 		}
 	default:
 		if strings.HasPrefix(id, "docker-image:") {
