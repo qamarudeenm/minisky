@@ -319,3 +319,64 @@ func TestCreateFirewall_RegistersRuleUnderShortVPCName(t *testing.T) {
 		t.Error("firewall rule registered by createFirewall is not visible under the short VPC name 'shared'")
 	}
 }
+
+func TestResolveOsImage(t *testing.T) {
+	tests := map[string]string{
+		"projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts": "ubuntu:24.04",
+		"ubuntu-2404-lts": "ubuntu:24.04",
+		"ubuntu-2204-lts": "ubuntu:22.04",
+		"debian-12":       "debian:12",
+		"ubuntu:24.04":    "ubuntu:24.04", // raw Docker references pass through
+		"":                "",
+		"no-such-family":  "",
+	}
+	for in, want := range tests {
+		if got := resolveOsImage(in); got != want {
+			t.Errorf("resolveOsImage(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestInsertInstanceUsesInitializeParamsImage(t *testing.T) {
+	// boot_disk.initialize_params.image is how Terraform asks for an OS; before
+	// initializeParams was modelled the request decoded to an empty disk and
+	// every VM silently booted the default image.
+	var body struct {
+		Disks []AttachedDisk `json:"disks"`
+	}
+	raw := `{"disks":[{"boot":true,"autoDelete":true,"initializeParams":{"sourceImage":"ubuntu-2204-lts","diskSizeGb":"50","diskType":"pd-balanced"}}]}`
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if len(body.Disks) != 1 || body.Disks[0].InitializeParams == nil {
+		t.Fatalf("initializeParams not decoded: %+v", body.Disks)
+	}
+	if got := resolveOsImage(body.Disks[0].InitializeParams.SourceImage); got != "ubuntu:22.04" {
+		t.Errorf("resolved image = %q, want ubuntu:22.04", got)
+	}
+}
+
+// GCE reports networkFirewallPolicyEnforcementOrder on every network. While the
+// shim omitted it, terraform proposed the same in-place update on every plan and
+// the configuration never converged.
+func TestNetworkReportsFirewallPolicyEnforcementOrder(t *testing.T) {
+	var network Network
+	raw := `{"kind":"compute#network","name":"vpc","networkFirewallPolicyEnforcementOrder":"BEFORE_CLASSIC_FIREWALL"}`
+	if err := json.Unmarshal([]byte(raw), &network); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if network.NetworkFirewallPolicyEnforcementOrder != "BEFORE_CLASSIC_FIREWALL" {
+		t.Errorf("enforcement order = %q, want BEFORE_CLASSIC_FIREWALL",
+			network.NetworkFirewallPolicyEnforcementOrder)
+	}
+
+	encoded, err := json.Marshal(Network{
+		Name: "vpc", NetworkFirewallPolicyEnforcementOrder: "AFTER_CLASSIC_FIREWALL",
+	})
+	if err != nil {
+		t.Fatalf("encode failed: %v", err)
+	}
+	if !strings.Contains(string(encoded), "networkFirewallPolicyEnforcementOrder") {
+		t.Errorf("field missing from the response body: %s", encoded)
+	}
+}

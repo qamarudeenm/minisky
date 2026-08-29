@@ -5,6 +5,60 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-29
+
+A fidelity release aimed at one question: can you run a real analytics engineering pipeline —
+Terraform, BigQuery, dbt, Airflow — entirely against MiniSky? Building that pipeline surfaced
+several defects that made it impossible, and this release closes them. See
+`examples/analytics-pipeline` for the pipeline and its fidelity notes.
+
+### Added
+- **Official BigQuery query surface**: MiniSky now serves `POST /projects/{project}/queries`
+  (`jobs.query`, executed synchronously) and `GET /projects/{project}/queries/{jobId}`
+  (`jobs.getQueryResults`). Results were previously only reachable at
+  `/jobs/{jobId}/results`, a path no Google client library uses — so `google-cloud-bigquery`,
+  and therefore dbt, `bq` and every SDK, got a 404 when reading query results. The original
+  path still works.
+- **Typed query results**: Query responses now report real BigQuery types (`INT64`, `FLOAT64`,
+  `NUMERIC`, `DATE`, `TIMESTAMP`, `BOOL`, `JSON`, …) mapped from the DuckDB column types, instead
+  of declaring every column `STRING`. Values are rendered in the shapes the REST API uses — `DATE`
+  as `2026-07-01`, `TIMESTAMP` as epoch seconds, and SQL `NULL` as JSON `null` rather than the
+  string `<nil>`.
+- **Query-created tables are visible to the metadata API**: After a query job succeeds, MiniSky
+  reconciles DuckDB's `information_schema` into its table registry, so a table created by
+  `CREATE TABLE AS SELECT` — which is how every dbt model materialises — can then be read back
+  through `tables.get` and `tables.list` with its schema.
+- **Boot images honour `initializeParams.sourceImage`**: `google_compute_instance`'s
+  `boot_disk.initialize_params.image` is now resolved through the `os_images` registry, so
+  `ubuntu-2204-lts`, `debian-12`, a full `projects/…/global/images/family/…` path, or a raw
+  Docker reference such as `python:3.12-slim` all select the image you asked for. Previously the
+  field was not decoded at all and every VM silently booted the default image — which also meant
+  there was no way to boot a VM from an image already present on a machine that could not reach
+  Docker Hub.
+
+### Fixed
+- **BigQuery SQL translation no longer corrupts literals**: The BigQuery→DuckDB translator
+  rewrote `dataset.table` into `dataset__table` with two regexes applied to the whole statement,
+  which also rewrote every other dot. Numeric literals were destroyed (`24.99` became `24__99`),
+  string contents were silently altered (`'ada.okonkwo@example.com'` became
+  `'ada__okonkwo@example__com'`) and qualified column references broke (`o.order_id` became
+  `o__order_id`) — enough to stop any pipeline that handles money or email addresses. The
+  translator now scans the statement instead: string literals, quoted identifiers, comments and
+  numbers pass through untouched, and a two-part reference is only collapsed when its first
+  segment names a known dataset, so table aliases survive.
+- **`terraform apply` converges**: Applying the same configuration twice produced the same
+  in-place update forever. `friendlyName` was not modelled on datasets or tables, the dataset
+  `PATCH` handler echoed the stored resource back without applying the request, tables answered
+  `405` to `PATCH` (completing the support started in 1.2.1), and `google_compute_network` did
+  not report `networkFirewallPolicyEnforcementOrder`. All four are fixed, and every apply now
+  reaches a clean plan.
+- **`tables.delete` deletes the data**: Deleting a table removed it from the metadata registry
+  but left the DuckDB table in place, so queries kept returning rows from a table that
+  `tables.get` reported as gone. The underlying table is now dropped too.
+- **Deterministic result column order**: Query result schemas were built by ranging over a Go
+  map, so the column order of an identical query changed between runs. Column order now follows
+  the `SELECT` list.
+
 ## [1.3.1] - 2026-08-16
 
 ### Added

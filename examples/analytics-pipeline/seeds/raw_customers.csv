@@ -1,0 +1,41 @@
+customer_id,full_name,email,country,signup_date,segment
+1001,Ada Okonkwo,ada.okonkwo@example.com,Canada,2025-06-28,enterprise
+1002,Chidi Mensah,chidi.mensah@example.com,Kenya,2025-01-26,consumer
+1003,Amara Adeyemi,amara.adeyemi@example.com,Ghana,2026-01-20,consumer
+1004,Tunde Balogun,tunde.balogun@example.com,Nigeria,2025-02-06,smb
+1005,Zainab Nwosu,zainab.nwosu@example.com,Ghana,2025-12-31,smb
+1006,Kwame Abubakar,kwame.abubakar@example.com,Ghana,2025-10-16,consumer
+1007,Nia Osei,nia.osei@example.com,Ghana,2025-01-19,smb
+1008,Emeka Mokoena,emeka.mokoena@example.com,Nigeria,2025-03-26,enterprise
+1009,Fatima Eze,fatima.eze@example.com,Kenya,2026-01-23,enterprise
+1010,Bola Dlamini,bola.dlamini@example.com,Nigeria,2026-01-24,consumer
+1011,Lerato Achebe,lerato.achebe@example.com,United Kingdom,2025-09-09,consumer
+1012,Sipho Bello,sipho.bello@example.com,South Africa,2025-08-08,consumer
+1013,Yara Chukwu,yara.chukwu@example.com,Germany,2025-07-11,smb
+1014,Malik Danladi,malik.danladi@example.com,United States,2025-11-15,smb
+1015,Ife Ekwueme,ife.ekwueme@example.com,United States,2026-01-26,smb
+1016,Kofi Falade,kofi.falade@example.com,South Africa,2025-04-13,consumer
+1017,Aisha Gbadamosi,aisha.gbadamosi@example.com,Canada,2025-02-08,smb
+1018,Obi Hassan,obi.hassan@example.com,United Kingdom,2025-02-20,smb
+1019,Grace Ibrahim,grace.ibrahim@example.com,Kenya,2025-01-10,smb
+1020,Samuel Jibril,samuel.jibril@example.com,Kenya,2025-02-01,consumer
+1021,Hauwa Kamau,hauwa.kamau@example.com,Germany,2025-09-06,smb
+1022,Danjuma Lawal,danjuma.lawal@example.com,South Africa,2025-01-17,smb
+1023,Ngozi Mwangi,ngozi.mwangi@example.com,Nigeria,2026-01-19,smb
+1024,Femi Ndlovu,femi.ndlovu@example.com,Kenya,2025-03-31,smb
+1025,Ruth Obi,ruth.obi@example.com,United States,2025-06-12,consumer
+1026,Peter Peters,peter.peters@example.com,Germany,2025-09-03,consumer
+1027,Halima Quadri,halima.quadri@example.com,Germany,2025-12-18,smb
+1028,Chinwe Raji,chinwe.raji@example.com,Nigeria,2025-08-18,smb
+1029,Musa Sanni,musa.sanni@example.com,United Kingdom,2026-01-02,smb
+1030,Blessing Taiwo,blessing.taiwo@example.com,South Africa,2025-04-25,consumer
+1031,Tobi Umeh,tobi.umeh@example.com,United Kingdom,2025-06-05,smb
+1032,Ejiro Vincent,ejiro.vincent@example.com,Nigeria,2025-05-11,smb
+1033,Sade Wanjiru,sade.wanjiru@example.com,South Africa,2025-03-24,consumer
+1034,Ola Yakubu,ola.yakubu@example.com,United Kingdom,2025-11-27,consumer
+1035,Zuri Zulu,zuri.zulu@example.com,Canada,2025-06-08,consumer
+1036,Kelechi Adeleke,kelechi.adeleke@example.com,United Kingdom,2025-11-11,consumer
+1037,Amina Bassey,amina.bassey@example.com,Germany,2025-04-15,consumer
+1038,Segun Chukwuma,segun.chukwuma@example.com,Kenya,2025-04-02,consumer
+1039,Nneka Duru,nneka.duru@example.com,Canada,2025-08-03,consumer
+1040,Yusuf Efe,yusuf.efe@example.com,United States,2025-07-08,smb

@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: retail_raw
+    description: Raw layer owned by Terraform and loaded by the Airflow DAG.
+    schema: "{{ env_var('BQ_DATASET_RAW', 'retail_raw') }}"
+    tables:
+      - name: orders
+        description: One row per order line as extracted from the source system.
+      - name: customers
+        description: One row per customer account.

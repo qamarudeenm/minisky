@@ -28,6 +28,23 @@ func (d *DuckDBBackend) ExecuteQuery(query string) ([]map[string]interface{}, er
 	return nil, fmt.Errorf("duckdb backend requires CGO_ENABLED=1")
 }
 
+// ExecuteQueryWithSchema mirrors the CGO signature so the shim compiles and
+// behaves identically on builds without a query engine.
+func (d *DuckDBBackend) ExecuteQueryWithSchema(query string) (*QueryResult, error) {
+	return nil, fmt.Errorf("duckdb backend requires CGO_ENABLED=1")
+}
+
+// SetKnownDatasets is a no-op: without an engine there is nothing to translate.
+func (d *DuckDBBackend) SetKnownDatasets(datasets []string) {}
+
+// ListTables reports no tables: this build materialises none.
+func (d *DuckDBBackend) ListTables() ([]BackendTable, error) {
+	return nil, fmt.Errorf("duckdb backend requires CGO_ENABLED=1")
+}
+
+// DropTable is a no-op: this build stores no data to drop.
+func (d *DuckDBBackend) DropTable(dataset, table string) error { return nil }
+
 func (d *DuckDBBackend) LoadData(project, dataset, table, sourceURI, format string) error {
 	return fmt.Errorf("duckdb backend requires CGO_ENABLED=1")
 }

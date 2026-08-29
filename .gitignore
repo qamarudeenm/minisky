@@ -63,6 +63,12 @@ docs/*
 DESIGN.md
 .claude
 
-# Examples
-/examples/
+# Examples — the examples themselves are part of the docs, but their local
+# Terraform working state is not (provider binaries alone run to ~100MB).
+examples/**/.terraform/
+examples/**/*.tfstate
+examples/**/*.tfstate.backup
+examples/**/.pipeline.env
+examples/**/*.log
+examples/**/__pycache__/
 *.id

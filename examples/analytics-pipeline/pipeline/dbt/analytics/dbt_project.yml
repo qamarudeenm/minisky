@@ -1,0 +1,27 @@
+name: analytics
+version: 1.0.0
+config-version: 2
+profile: minisky_analytics
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# MiniSky's BigQuery shim executes SQL on DuckDB and resolves
+# `project.dataset.table` by rewriting it to `dataset__table`. Backtick-quoted
+# identifiers do not match that rewrite, so relations are emitted unquoted.
+# Against real BigQuery this is equally valid — none of the names need quoting.
+quoting:
+  database: false
+  schema: false
+  identifier: false
+
+models:
+  analytics:
+    staging:
+      +materialized: table
+      +schema: "{{ env_var('BQ_DATASET_STAGING', 'retail_staging') }}"
+    marts:
+      +materialized: table
+      +schema: "{{ env_var('BQ_DATASET_MARTS', 'retail_marts') }}"

@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars and adjust. Every value has a working default.
+
+project_id  = "retail-analytics-local"
+name_prefix = "retail"
+region      = "us-central1"
+zone        = "us-central1-a"
+
+# MiniSky gateway (minisky start)
+minisky_host = "localhost"
+minisky_port = 8080
+
+# Orchestrator VM
+vm_name      = "analytics-orchestrator"
+machine_type = "n1-standard-4"
+
+# An os_images id, or a raw Docker reference already present locally.
+vm_image = "ubuntu-2404-lts"
+
+# Toolchain
+python_version       = "3.12"
+airflow_version      = "2.10.5"
+dbt_bigquery_version = ">=1.9,<2"
+
+# Trino is off by default — dbt, Airflow and analysts all talk to BigQuery
+# directly. Turn it on only to rehearse federating BigQuery with other sources.
+install_trino = false
+
+# Set false to provision the VM without starting Airflow at the end of apply.
+start_services = true

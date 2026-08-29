@@ -1,0 +1,7 @@
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+crash.log
+*.tfvars
+!terraform.tfvars.example
+.pipeline.env

@@ -37,8 +37,9 @@ import (
 	"minisky/pkg/config"
 	"os"
 	"path/filepath"
-	"regexp"
+	"sort"
 	"strings"
+	"sync"
 
 	_ "github.com/marcboeker/go-duckdb"
 )
@@ -48,6 +49,12 @@ type DuckDBBackend struct {
 	enabled bool
 	dbPath  string
 	db      *sql.DB
+
+	// datasetsMu guards knownDatasets, the set of dataset names the shim has
+	// seen. The SQL translator uses it to tell `dataset.table` (a relation to
+	// rewrite) apart from `alias.column` (which must be left alone).
+	datasetsMu    sync.RWMutex
+	knownDatasets map[string]bool
 }
 
 // NewDuckDBBackend returns a DuckDBBackend. Only active when
@@ -59,7 +66,7 @@ func NewDuckDBBackend() *DuckDBBackend {
 		dbPath = filepath.Join(config.GetMiniskyDir(), "data", "bigquery.duckdb")
 	}
 
-	b := &DuckDBBackend{enabled: enabled, dbPath: dbPath}
+	b := &DuckDBBackend{enabled: enabled, dbPath: dbPath, knownDatasets: map[string]bool{}}
 
 	if enabled {
 		log.Printf("[DuckDBBackend] ✅ DuckDB integration ENABLED — queries will execute against %s", dbPath)
@@ -103,13 +110,66 @@ func (d *DuckDBBackend) init() error {
 	return db.Ping()
 }
 
+// SetKnownDatasets records the datasets the shim currently knows about, so the
+// SQL translator can resolve two-part `dataset.table` references.
+func (d *DuckDBBackend) SetKnownDatasets(datasets []string) {
+	d.datasetsMu.Lock()
+	defer d.datasetsMu.Unlock()
+	for _, name := range datasets {
+		if name != "" {
+			d.knownDatasets[name] = true
+		}
+	}
+}
+
+// datasetSet is the union of the datasets registered through the API and the
+// prefixes of tables already materialised in DuckDB. The second source keeps
+// queries working after a restart, when the shim's in-memory dataset registry
+// is empty but the database file still holds the tables.
+func (d *DuckDBBackend) datasetSet() map[string]bool {
+	known := map[string]bool{}
+
+	d.datasetsMu.RLock()
+	for name := range d.knownDatasets {
+		known[name] = true
+	}
+	d.datasetsMu.RUnlock()
+
+	if d.db != nil {
+		rows, err := d.db.Query(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name string
+				if err := rows.Scan(&name); err != nil {
+					continue
+				}
+				if dataset, _, ok := splitDuckTableName(name); ok {
+					known[dataset] = true
+				}
+			}
+		}
+	}
+	return known
+}
+
 // ExecuteQuery runs a BigQuery StandardSQL query and returns rows as a slice of maps.
 // The query is first translated from BigQuery SQL dialect to DuckDB SQL.
 func (d *DuckDBBackend) ExecuteQuery(query string) ([]map[string]interface{}, error) {
+	result, err := d.ExecuteQueryWithSchema(query)
+	if err != nil {
+		return nil, err
+	}
+	return result.Rows, nil
+}
+
+// ExecuteQueryWithSchema runs a query and returns its rows together with the
+// ordered, typed column list DuckDB reported.
+func (d *DuckDBBackend) ExecuteQueryWithSchema(query string) (*QueryResult, error) {
 	if !d.enabled {
 		return nil, fmt.Errorf("duckdb backend not enabled")
 	}
-	translated := translateBQtoDuck(query)
+	translated := translateBQtoDuckWithDatasets(query, d.datasetSet())
 	log.Printf("[DuckDBBackend] Executing: %s", translated)
 
 	rows, err := d.db.Query(translated)
@@ -117,38 +177,121 @@ func (d *DuckDBBackend) ExecuteQuery(query string) ([]map[string]interface{}, er
 		return nil, err
 	}
 	defer rows.Close()
-	return scanRows(rows)
+	return scanResult(rows)
 }
 
-func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
+// scanResult reads every row, preserving column order and mapping DuckDB
+// column types to their BigQuery equivalents.
+func scanResult(rows *sql.Rows) (*QueryResult, error) {
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
 	}
-	var results []map[string]interface{}
-	for rows.Next() {
-		columns := make([]interface{}, len(cols))
-		columnPointers := make([]interface{}, len(cols))
-		for i := range columns {
-			columnPointers[i] = &columns[i]
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+
+	result := &QueryResult{Columns: make([]QueryColumn, len(cols))}
+	for i, name := range cols {
+		bqType := "STRING"
+		if i < len(types) {
+			bqType = duckToBQType(types[i].DatabaseTypeName())
 		}
-		if err := rows.Scan(columnPointers...); err != nil {
+		result.Columns[i] = QueryColumn{Name: name, Type: bqType}
+	}
+
+	for rows.Next() {
+		values := make([]interface{}, len(cols))
+		pointers := make([]interface{}, len(cols))
+		for i := range values {
+			pointers[i] = &values[i]
+		}
+		if err := rows.Scan(pointers...); err != nil {
 			return nil, err
 		}
-		rowMap := make(map[string]interface{})
-		for i, colName := range cols {
-			val := columnPointers[i].(*interface{})
-			// Convert bytes arrays into strings if possible
-			v := *val
-			if b, ok := v.([]byte); ok {
-				rowMap[colName] = string(b)
-			} else {
-				rowMap[colName] = v
+		row := make(map[string]interface{}, len(cols))
+		for i, name := range cols {
+			value := *(pointers[i].(*interface{}))
+			if b, ok := value.([]byte); ok {
+				value = string(b)
 			}
+			row[name] = value
 		}
-		results = append(results, rowMap)
+		result.Rows = append(result.Rows, row)
 	}
-	return results, nil
+	return result, rows.Err()
+}
+
+// ListTables reports every table in the database, with its schema translated
+// back into BigQuery types. It is how tables created by a query job (dbt models,
+// CREATE TABLE AS ...) become visible to the metadata API.
+func (d *DuckDBBackend) ListTables() ([]BackendTable, error) {
+	if !d.enabled || d.db == nil {
+		return nil, fmt.Errorf("duckdb backend not enabled")
+	}
+
+	rows, err := d.db.Query(`
+		SELECT table_name, column_name, data_type, is_nullable, ordinal_position
+		FROM information_schema.columns
+		WHERE table_schema = 'main'
+		ORDER BY table_name, ordinal_position`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	schemas := map[string]*TableSchema{}
+	for rows.Next() {
+		var tableName, columnName, dataType, isNullable string
+		var position int
+		if err := rows.Scan(&tableName, &columnName, &dataType, &isNullable, &position); err != nil {
+			return nil, err
+		}
+		schema, ok := schemas[tableName]
+		if !ok {
+			schema = &TableSchema{}
+			schemas[tableName] = schema
+		}
+		mode := "NULLABLE"
+		if strings.EqualFold(isNullable, "NO") {
+			mode = "REQUIRED"
+		}
+		schema.Fields = append(schema.Fields, FieldSchema{
+			Name: columnName,
+			Type: duckToBQType(dataType),
+			Mode: mode,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(schemas))
+	for name := range schemas {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	tables := make([]BackendTable, 0, len(names))
+	for _, name := range names {
+		dataset, table, ok := splitDuckTableName(name)
+		if !ok {
+			continue
+		}
+		tables = append(tables, BackendTable{Dataset: dataset, Table: table, Schema: schemas[name]})
+	}
+	return tables, nil
+}
+
+// DropTable removes a table from DuckDB, so deleting it through the metadata
+// API does not leave its data behind.
+func (d *DuckDBBackend) DropTable(dataset, table string) error {
+	if !d.enabled || d.db == nil {
+		return nil
+	}
+	_, err := d.db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %q", duckTableName(dataset, table)))
+	return err
 }
 
 // LoadData ingests a file or URL into a DuckDB table.
@@ -156,11 +299,12 @@ func (d *DuckDBBackend) LoadData(project, dataset, table, sourceURI, format stri
 	if !d.enabled {
 		return fmt.Errorf("duckdb backend not enabled")
 	}
-	tableName := fmt.Sprintf("%s__%s", dataset, table)
-	
+	d.SetKnownDatasets([]string{dataset})
+	tableName := duckTableName(dataset, table)
+
 	var query string
 	format = strings.ToUpper(format)
-	
+
 	// Convert Windows path separators to forward slashes to prevent SQL escape sequence errors
 	safeURI := filepath.ToSlash(sourceURI)
 
@@ -185,6 +329,7 @@ func (d *DuckDBBackend) CreateTable(project, dataset, table string, schema *Tabl
 	if !d.enabled || schema == nil {
 		return nil
 	}
+	d.SetKnownDatasets([]string{dataset})
 	ddl := buildDDL(project, dataset, table, schema)
 	log.Printf("[DuckDBBackend] Creating table: %s", ddl)
 
@@ -195,71 +340,10 @@ func (d *DuckDBBackend) CreateTable(project, dataset, table string, schema *Tabl
 	return err
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SQL Translation helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// bqToDuckTypeMap maps BigQuery field types to DuckDB equivalents.
-var bqToDuckTypeMap = map[string]string{
-	"STRING":    "VARCHAR",
-	"BYTES":     "BLOB",
-	"INTEGER":   "BIGINT",
-	"INT64":     "BIGINT",
-	"FLOAT":     "DOUBLE",
-	"FLOAT64":   "DOUBLE",
-	"NUMERIC":   "DECIMAL(38,9)",
-	"BIGNUMERIC": "DECIMAL(76,38)",
-	"BOOLEAN":   "BOOLEAN",
-	"BOOL":      "BOOLEAN",
-	"TIMESTAMP": "TIMESTAMPTZ",
-	"DATE":      "DATE",
-	"TIME":      "TIME",
-	"DATETIME":  "TIMESTAMP",
-	"GEOGRAPHY": "VARCHAR", // approximate — DuckDB lacks native GEOGRAPHY
-	"JSON":      "JSON",
-	"RECORD":    "STRUCT", // nested — requires recursive handling
-	"STRUCT":    "STRUCT",
-}
-
-// translateBQtoDuck does lightweight BigQuery → DuckDB SQL dialect conversion.
-// Handles the most common divergences between the two dialects.
-func translateBQtoDuck(bqSQL string) string {
-	s := bqSQL
-
-	// Backtick → double-quote identifiers  (`project.dataset.table` → "project.dataset.table")
-	s = strings.ReplaceAll(s, "`", "\"")
-
-	// CURRENT_TIMESTAMP() → CURRENT_TIMESTAMP
-	s = strings.ReplaceAll(s, "CURRENT_TIMESTAMP()", "CURRENT_TIMESTAMP")
-
-	// TIMESTAMP_TRUNC(x, DAY) → DATE_TRUNC('day', x)  (basic form)
-	// Note: Full translation requires a proper SQL parser; this handles the common case.
-	if strings.Contains(s, "TIMESTAMP_TRUNC") {
-		log.Printf("[DuckDBBackend] WARN: TIMESTAMP_TRUNC requires manual translation — result may vary")
-	}
-
-	// SAFE_DIVIDE(a, b) → CASE WHEN b = 0 THEN NULL ELSE a / b END
-	if strings.Contains(s, "SAFE_DIVIDE") {
-		log.Printf("[DuckDBBackend] WARN: SAFE_DIVIDE not auto-translated — consider rewriting query")
-	}
-
-	// dataset.table → dataset__table (DuckDB internal mapping)
-	// Supports project.dataset.table (3 segments) and dataset.table (2 segments)
-	// 1. project.dataset.table -> dataset.table
-	projectRe := regexp.MustCompile(`([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)`)
-	s = projectRe.ReplaceAllString(s, "$2.$3")
-
-	// 2. dataset.table -> dataset__table
-	datasetRe := regexp.MustCompile(`([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)`)
-	s = datasetRe.ReplaceAllString(s, "${1}__$2")
-
-	return s
-}
-
 // buildDDL generates a CREATE TABLE IF NOT EXISTS statement for DuckDB.
 func buildDDL(project, dataset, table string, schema *TableSchema) string {
 	// DuckDB table name: dataset__table (project is ignored in local context)
-	tableName := fmt.Sprintf("%s__%s", dataset, table)
+	tableName := duckTableName(dataset, table)
 	cols := make([]string, 0, len(schema.Fields))
 	for _, f := range schema.Fields {
 		duckType := bqToDuckTypeMap[strings.ToUpper(f.Type)]

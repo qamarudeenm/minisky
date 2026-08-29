@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"minisky/pkg/config"
 	"minisky/pkg/orchestrator"
 	"minisky/pkg/registry"
 )
@@ -118,13 +119,24 @@ type AccessConfig struct {
 }
 
 type AttachedDisk struct {
-	Kind       string `json:"kind"`
-	Type       string `json:"type"` // PERSISTENT, SCRATCH
-	Mode       string `json:"mode"` // READ_WRITE, READ_ONLY
-	Source     string `json:"source,omitempty"`
-	DeviceName string `json:"deviceName"`
-	Boot       bool   `json:"boot"`
-	AutoDelete bool   `json:"autoDelete"`
+	Kind             string                `json:"kind"`
+	Type             string                `json:"type"` // PERSISTENT, SCRATCH
+	Mode             string                `json:"mode"` // READ_WRITE, READ_ONLY
+	Source           string                `json:"source,omitempty"`
+	DeviceName       string                `json:"deviceName"`
+	Boot             bool                  `json:"boot"`
+	AutoDelete       bool                  `json:"autoDelete"`
+	InitializeParams *DiskInitializeParams `json:"initializeParams,omitempty"`
+}
+
+// DiskInitializeParams carries the boot disk's creation parameters. Only the
+// fields the shim acts on are modelled; the rest are round-tripped as sent.
+// diskSizeGb is deliberately absent — the API types it as a string but clients
+// differ, and decoding it strictly would reject an otherwise valid request.
+type DiskInitializeParams struct {
+	DiskName    string `json:"diskName,omitempty"`
+	DiskType    string `json:"diskType,omitempty"`
+	SourceImage string `json:"sourceImage,omitempty"`
 }
 
 // Network represents a VPC network.
@@ -136,6 +148,10 @@ type Network struct {
 	SelfLink              string `json:"selfLink"`
 	AutoCreateSubnetworks bool   `json:"autoCreateSubnetworks"`
 	CreationTimestamp     string `json:"creationTimestamp"`
+
+	// GCE always reports this, defaulting to AFTER_CLASSIC_FIREWALL. Omitting it
+	// made every terraform plan propose the same in-place update forever.
+	NetworkFirewallPolicyEnforcementOrder string `json:"networkFirewallPolicyEnforcementOrder,omitempty"`
 }
 
 // SecurityPolicy represents a Cloud Armor WAF rule set.
@@ -433,16 +449,32 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 	op := api.opMgr.Register("compute#operation", "insert", targetLink, zone, "")
 	op.Kind = "compute#operation"
 
-	// Resolve the docker image mapping from the boot disk source
-	osImage := "ubuntu:26.04" // Fallback to 2026 default
+	// Resolve the docker image backing the boot disk. A caller can name an
+	// existing disk (source) or, far more commonly, ask for an OS image family
+	// through initializeParams.sourceImage — which is what Terraform's
+	// boot_disk.initialize_params.image sends.
+	osImage := ""
 	for _, disk := range disks {
-		if disk.Boot && disk.Source != "" {
+		if !disk.Boot {
+			continue
+		}
+		if disk.Source != "" {
 			osImage = disk.Source
 			break
 		}
+		if disk.InitializeParams != nil {
+			if resolved := resolveOsImage(disk.InitializeParams.SourceImage); resolved != "" {
+				osImage = resolved
+				break
+			}
+		}
 	}
+	if osImage == "" {
+		osImage = defaultOsImage()
+	}
+
 	// Legacy CentOS check for backward compatibility or direct API calls
-	if osImage == "ubuntu:26.04" {
+	if osImage == defaultOsImage() {
 		lowerSource := strings.ToLower(machineType + " ")
 		for _, disk := range disks {
 			lowerSource += strings.ToLower(disk.Source)
@@ -735,6 +767,46 @@ func (api *API) routeZones(w http.ResponseWriter, r *http.Request, path string) 
 // Images
 // ─────────────────────────────────────────────────────────────────────────────
 
+// defaultOsImage is the image a VM boots when the request names none.
+func defaultOsImage() string {
+	if img := config.GetImageRegistry().Compute.DefaultImage; img != "" {
+		return img
+	}
+	return "ubuntu:26.04"
+}
+
+// resolveOsImage maps a GCE source image reference onto the Docker image that
+// backs it, using the same os_images registry the dashboard offers:
+//
+//	projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts → ubuntu:24.04
+//	ubuntu-2404-lts                                               → ubuntu:24.04
+//	ubuntu:24.04                                                  → ubuntu:24.04
+//
+// It returns "" when the reference names no known family, leaving the caller to
+// fall back to the default image.
+func resolveOsImage(sourceImage string) string {
+	name := strings.TrimSpace(sourceImage)
+	if name == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+
+	for _, img := range config.GetImageRegistry().Compute.OsImages {
+		if strings.EqualFold(img.ID, name) {
+			return img.Image
+		}
+	}
+
+	// A raw Docker reference passes through, which is how the dashboard and
+	// direct API callers pin an exact image.
+	if strings.Contains(name, ":") {
+		return name
+	}
+	return ""
+}
+
 func (api *API) routeImages(w http.ResponseWriter, r *http.Request, path string) {
 	project := extractProject(path)
 	// Example path: /compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts
@@ -809,19 +881,25 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 	switch r.Method {
 	case http.MethodPost:
 		var body struct {
-			Name                  string `json:"name"`
-			Description           string `json:"description"`
-			AutoCreateSubnetworks bool   `json:"autoCreateSubnetworks"`
+			Name                                  string `json:"name"`
+			Description                           string `json:"description"`
+			AutoCreateSubnetworks                 bool   `json:"autoCreateSubnetworks"`
+			NetworkFirewallPolicyEnforcementOrder string `json:"networkFirewallPolicyEnforcementOrder"`
 		}
 		json.NewDecoder(r.Body).Decode(&body)
+		enforcementOrder := body.NetworkFirewallPolicyEnforcementOrder
+		if enforcementOrder == "" {
+			enforcementOrder = "AFTER_CLASSIC_FIREWALL" // GCE's default
+		}
 		n := &Network{
-			Kind:                  "compute#network",
-			ID:                    randomNumericID(),
-			Name:                  body.Name,
-			Description:           body.Description,
-			AutoCreateSubnetworks: body.AutoCreateSubnetworks,
-			SelfLink:              fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/%s", project, body.Name),
-			CreationTimestamp:     time.Now().UTC().Format(time.RFC3339),
+			Kind:                                  "compute#network",
+			ID:                                    randomNumericID(),
+			Name:                                  body.Name,
+			Description:                           body.Description,
+			AutoCreateSubnetworks:                 body.AutoCreateSubnetworks,
+			NetworkFirewallPolicyEnforcementOrder: enforcementOrder,
+			SelfLink:                              fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/%s", project, body.Name),
+			CreationTimestamp:                     time.Now().UTC().Format(time.RFC3339),
 		}
 		key := project + ":" + body.Name
 		api.mu.Lock()
@@ -848,11 +926,13 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 			if !ok && name == "default" {
 				// Return a virtual default network
 				n = &Network{
-					Kind:              "compute#network",
-					ID:                "0",
-					Name:              "default",
-					SelfLink:          fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
-					CreationTimestamp: "2024-01-01T00:00:00Z",
+					Kind:                                  "compute#network",
+					ID:                                    "0",
+					Name:                                  "default",
+					SelfLink:                              fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/default", project),
+					CreationTimestamp:                     "2024-01-01T00:00:00Z",
+					AutoCreateSubnetworks:                 true,
+					NetworkFirewallPolicyEnforcementOrder: "AFTER_CLASSIC_FIREWALL",
 				}
 				ok = true
 			}
