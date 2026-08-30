@@ -88,7 +88,8 @@ release:
   mode: replace
   header: |
     ## MiniSky {{ .Tag }}
-    This release includes critical bug fixes and documentation updates.
+    **Fix release** — resolves macOS installation password loop (issue #6).
+    The installer no longer requires `sudo` when run via `curl | sh` on macOS.
   footer: |
     **Full Changelog**: https://github.com/qamarudeenm/minisky/compare/{{ .PreviousTag }}...{{ .Tag }}
 

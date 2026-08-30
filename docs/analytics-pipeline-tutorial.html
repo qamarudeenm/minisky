@@ -1,0 +1,1294 @@
+<title>Zero-Cloud Analytics Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --paper:      #F6F7F5;
+    --surface:    #FFFFFF;
+    --surface-2:  #ECEFEC;
+    --ink:        #12181B;
+    --slate:      #5B6A6E;
+    --rule:       #D5DBD8;
+    --rule-soft:  #E4E8E5;
+    --petrol:     #0E6B70;
+    --petrol-dim: #0E6B7014;
+    --brass:      #9A6E14;
+    --brass-dim:  #9A6E1414;
+    --rust:       #9E3B2E;
+    --code-bg:    #10181A;
+    --code-fg:    #DDE5E3;
+    --code-chrome:#1B2528;
+    --code-dim:   #7C8F93;
+
+    --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --f-body:    "Source Serif 4", Georgia, "Times New Roman", serif;
+    --f-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --measure: 68ch;
+    --rail: 232px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E1416;
+      --surface:    #141C1E;
+      --surface-2:  #1A2427;
+      --ink:        #DDE4E2;
+      --slate:      #93A3A5;
+      --rule:       #253134;
+      --rule-soft:  #1C2528;
+      --petrol:     #4FAEB0;
+      --petrol-dim: #4FAEB01F;
+      --brass:      #D2A03F;
+      --brass-dim:  #D2A03F1F;
+      --rust:       #E08272;
+      --code-bg:    #0A1113;
+      --code-fg:    #D6DEDC;
+      --code-chrome:#141D20;
+      --code-dim:   #6E8286;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0E1416;
+    --surface:    #141C1E;
+    --surface-2:  #1A2427;
+    --ink:        #DDE4E2;
+    --slate:      #93A3A5;
+    --rule:       #253134;
+    --rule-soft:  #1C2528;
+    --petrol:     #4FAEB0;
+    --petrol-dim: #4FAEB01F;
+    --brass:      #D2A03F;
+    --brass-dim:  #D2A03F1F;
+    --rust:       #E08272;
+    --code-bg:    #0A1113;
+    --code-fg:    #D6DEDC;
+    --code-chrome:#141D20;
+    --code-dim:   #6E8286;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    gap: 0 56px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px 120px;
+  }
+
+  /* ── Rail ─────────────────────────────────────────────────────────── */
+  .rail { position: relative; }
+  .rail-inner {
+    position: sticky;
+    top: 0;
+    padding: 40px 0 40px;
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+  .rail-label {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin: 0 0 14px;
+  }
+  .rail-nav { display: flex; flex-direction: column; gap: 2px; margin-bottom: 34px; }
+  .rail-nav a {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 6px 4px 0;
+    font-family: var(--f-display);
+    font-size: 13.5px;
+    line-height: 1.35;
+    color: var(--slate);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    padding-left: 10px;
+    transition: color .12s, border-color .12s;
+  }
+  .rail-nav a:hover { color: var(--ink); border-left-color: var(--rule); }
+  .rail-nav a.is-active { color: var(--petrol); border-left-color: var(--petrol); }
+  .rail-nav .n {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--petrol);
+    opacity: .85;
+  }
+
+  .rail-facts {
+    border-top: 1px solid var(--rule);
+    padding-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .fact { display: flex; flex-direction: column; gap: 1px; }
+  .fact dt {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+  .fact dd {
+    margin: 0;
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Main column ──────────────────────────────────────────────────── */
+  main { min-width: 0; padding-top: 40px; }
+  .col { max-width: var(--measure); }
+
+  header.masthead { margin-bottom: 44px; }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--petrol);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(30px, 4.6vw, 46px);
+    line-height: 1.06;
+    letter-spacing: -0.022em;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0 0 26px;
+    max-width: 62ch;
+  }
+  .standfirst strong { font-weight: 600; }
+
+  .stack-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .stack-strip div {
+    flex: 1 1 auto;
+    padding: 10px 14px;
+    border-right: 1px solid var(--rule-soft);
+    min-width: 118px;
+  }
+  .stack-strip div:last-child { border-right: 0; }
+  .stack-strip .k {
+    display: block;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 2px;
+  }
+  .stack-strip .v {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  section { margin-top: 54px; scroll-margin-top: 24px; }
+  .sec-head {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 12px;
+    align-items: baseline;
+    border-top: 2px solid var(--ink);
+    padding-top: 12px;
+    margin-bottom: 20px;
+    max-width: var(--measure);
+  }
+  .sec-head .n {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--petrol);
+    font-variant-numeric: tabular-nums;
+  }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 25px;
+    line-height: 1.2;
+    letter-spacing: -0.014em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 16.5px;
+    letter-spacing: -0.006em;
+    margin: 30px 0 10px;
+    max-width: var(--measure);
+  }
+  p { margin: 0 0 15px; max-width: var(--measure); }
+  ul, ol { max-width: var(--measure); margin: 0 0 15px; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  a { color: var(--petrol); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, .rail-nav a:focus-visible {
+    outline: 2px solid var(--petrol);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  strong { font-weight: 600; }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: 0.855em;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 2px;
+    word-break: break-word;
+  }
+
+  /* ── Code blocks ──────────────────────────────────────────────────── */
+  .block {
+    margin: 0 0 20px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--code-bg);
+    max-width: 860px;
+  }
+  .block-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--code-chrome);
+    border-bottom: 1px solid #ffffff10;
+    padding: 7px 13px;
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: .05em;
+    color: var(--code-dim);
+  }
+  .block-bar .tag {
+    text-transform: uppercase;
+    font-size: 9.5px;
+    letter-spacing: .13em;
+  }
+  .block pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--f-mono);
+    font-size: 12.9px;
+    line-height: 1.62;
+    color: var(--code-fg);
+    tab-size: 2;
+  }
+  .block pre code { background: none; padding: 0; font-size: inherit; }
+  .c-cmt { color: var(--code-dim); }
+  .c-key { color: #86B8BA; }
+  .c-str { color: #C8A96A; }
+  .c-fn  { color: #9EC7A4; }
+  .c-num { color: #C2907E; }
+  .c-ok  { color: #7FBF8A; }
+  .c-err { color: #E08272; }
+  .prompt { color: #5F9EA3; user-select: none; }
+
+  /* ── Callouts ─────────────────────────────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--brass);
+    background: var(--brass-dim);
+    padding: 13px 16px;
+    margin: 0 0 20px;
+    max-width: var(--measure);
+    border-radius: 0 3px 3px 0;
+  }
+  .note .lbl {
+    display: block;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 5px;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note code { background: #00000012; }
+
+  .check {
+    border-left: 3px solid var(--petrol);
+    background: var(--petrol-dim);
+    padding: 13px 16px;
+    margin: 0 0 20px;
+    max-width: 860px;
+    border-radius: 0 3px 3px 0;
+  }
+  .check .lbl {
+    display: block;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--petrol);
+    margin-bottom: 6px;
+  }
+  .check pre {
+    margin: 6px 0 0;
+    font-family: var(--f-mono);
+    font-size: 12.4px;
+    line-height: 1.55;
+    overflow-x: auto;
+    color: var(--ink);
+  }
+  .check p:last-child, .check pre:last-child { margin-bottom: 0; }
+
+  /* ── Tables ───────────────────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; margin: 0 0 22px; max-width: 900px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 9px 14px 9px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  th {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--slate);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  td code { font-size: 12.2px; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ── Diagram ──────────────────────────────────────────────────────── */
+  .diagram pre.mermaid {
+    margin: 0;
+    font-family: var(--f-mono);
+    font-size: 12.6px;
+    line-height: 1.55;
+    color: var(--slate);
+    white-space: pre;
+  }
+  .diagram pre.mermaid[data-processed] { color: inherit; }
+
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 20px 16px;
+    margin: 0 0 20px;
+    overflow-x: auto;
+    max-width: 900px;
+  }
+  .caption {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--slate);
+    margin: -10px 0 24px;
+    max-width: var(--measure);
+    line-height: 1.5;
+  }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    max-width: var(--measure);
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--slate);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 1000px) {
+    .shell { grid-template-columns: 1fr; gap: 0; padding: 0 22px 80px; }
+    .rail-inner { position: static; max-height: none; padding: 32px 0 0; }
+    .rail-nav {
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 4px 14px;
+      margin-bottom: 22px;
+    }
+    .rail-nav a { border-left: 0; padding-left: 0; }
+    .rail-nav a.is-active { border-left: 0; }
+    .rail-facts { flex-direction: row; flex-wrap: wrap; gap: 16px 26px; }
+    main { padding-top: 26px; }
+    body { font-size: 16.5px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="Steps">
+    <div class="rail-inner">
+      <p class="rail-label">Build order</p>
+      <div class="rail-nav">
+        <a href="#preflight"><span class="n">00</span><span>Preflight</span></a>
+        <a href="#daemon"><span class="n">01</span><span>Start the emulator</span></a>
+        <a href="#provider"><span class="n">02</span><span>Point Terraform at it</span></a>
+        <a href="#network"><span class="n">03</span><span>Network before VM</span></a>
+        <a href="#data"><span class="n">04</span><span>Lake, warehouse, bus</span></a>
+        <a href="#vm"><span class="n">05</span><span>The VM</span></a>
+        <a href="#install"><span class="n">06</span><span>Software onto the OS</span></a>
+        <a href="#auth"><span class="n">07</span><span>Make dbt authenticate</span></a>
+        <a href="#dbt"><span class="n">08</span><span>The dbt project</span></a>
+        <a href="#dag"><span class="n">09</span><span>The Airflow DAG</span></a>
+        <a href="#apply"><span class="n">10</span><span>Apply and run</span></a>
+        <a href="#failures"><span class="n">11</span><span>Failure modes</span></a>
+        <a href="#limits"><span class="n">12</span><span>What is not emulated</span></a>
+      </div>
+      <dl class="rail-facts">
+        <div class="fact"><dt>Cloud spend</dt><dd>$0.00</dd></div>
+        <div class="fact"><dt>First apply</dt><dd>~11 min</dd></div>
+        <div class="fact"><dt>Disk</dt><dd>~2.4 GB</dd></div>
+        <div class="fact"><dt>Verified on</dt><dd>MiniSky v1.4.1</dd></div>
+      </dl>
+    </div>
+  </nav>
+
+  <main>
+    <header class="masthead">
+      <p class="eyebrow">End-to-end tutorial</p>
+      <h1>A production-shaped analytics pipeline that never touches a cloud account</h1>
+      <p class="standfirst">
+        Terraform provisions a VPC, three buckets, three BigQuery datasets, a Pub/Sub topic and a VM,
+        then installs Airflow and dbt <strong>onto that VM's operating system</strong>, deploys the
+        pipeline and starts it. It runs against MiniSky, a local GCP emulator, so the same HCL and dbt
+        models reach real GCP by changing one endpoint.
+      </p>
+      <div class="stack-strip">
+        <div><span class="k">Emulator</span><span class="v">MiniSky 1.4.1</span></div>
+        <div><span class="k">IaC</span><span class="v">Terraform 1.16</span></div>
+        <div><span class="k">Provider</span><span class="v">google ~&gt; 5.45</span></div>
+        <div><span class="k">Orchestrator</span><span class="v">Airflow 2.10.5</span></div>
+        <div><span class="k">Transform</span><span class="v">dbt-core 1.12</span></div>
+        <div><span class="k">Warehouse</span><span class="v">DuckDB</span></div>
+      </div>
+    </header>
+
+    <section id="preflight">
+      <div class="sec-head"><span class="n">00</span><h2>Preflight</h2></div>
+      <p>
+        Four things on the host. Older Docker and Terraform are fine; MiniSky must be 1.4.1 or newer.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>host</span><span class="tag">bash</span></div>
+        <pre><code><span class="prompt">$</span> docker version --format '{{.Server.Version}}'   <span class="c-cmt"># 29.2.1</span>
+<span class="prompt">$</span> terraform version                              <span class="c-cmt"># v1.16.0</span>
+<span class="prompt">$</span> python3 --version                              <span class="c-cmt"># 3.12.3</span>
+<span class="prompt">$</span> minisky version                                <span class="c-cmt"># MiniSky v1.4.1</span></code></pre>
+      </div>
+      <p>
+        Docker needs Hub access: the emulator lazily starts <code>fsouza/fake-gcs-server</code> for
+        Storage and <code>cloud-sdk:emulators</code> for Pub/Sub, and the VM boots
+        <code>ubuntu:24.04</code>. Pull them up front on a slow link — the Pub/Sub image is ~1 GB and
+        its first cold start takes ~90 seconds.
+      </p>
+      <p>
+        Clone the repository — every path and command below is relative to the example directory.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>host</span><span class="tag">bash</span></div>
+        <pre><code><span class="prompt">$</span> git clone https://github.com/qamarudeenm/minisky.git
+<span class="prompt">$</span> cd minisky/examples/analytics-pipeline</code></pre>
+      </div>
+      <p>
+        The finished configuration is at
+        <a href="https://github.com/qamarudeenm/minisky/tree/main/examples/analytics-pipeline" target="_blank" rel="noopener">examples/analytics-pipeline</a>; the steps below
+        build it up file by file.
+      </p>
+
+      <div class="note">
+        <span class="lbl">Ports</span>
+        <p>
+          MiniSky binds <code>8080</code> for the API gateway and <code>8081</code> for the dashboard.
+          If something already holds 8081, start with <code>--ui-port 8099</code>; the tutorial only
+          depends on 8080.
+        </p>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="sec-head"><span class="n">—</span><h2>What you are building</h2></div>
+      <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph HOST["Your machine"]
+    TF["terraform apply"]
+    MS["MiniSky gateway :8080"]
+  end
+
+  subgraph EMU["Emulated GCP (MiniSky)"]
+    GCS["Cloud Storage<br/>raw · curated · artifacts"]
+    BQ["BigQuery<br/>raw · staging · marts"]
+    PS["Pub/Sub<br/>ingestion-events"]
+    VPC["VPC + firewall"]
+  end
+
+  subgraph VM["Emulated VM (Docker container)"]
+    AF["Airflow 2.10.5"]
+    DBT["dbt-core 1.12"]
+  end
+
+  TF -->|"REST, custom_endpoint"| MS
+  TF -->|"docker exec"| VM
+  MS --- GCS
+  MS --- BQ
+  MS --- PS
+  MS --- VPC
+  AF -->|"1 extract"| GCS
+  AF -->|"2 load"| BQ
+  DBT -->|"3 transform"| BQ
+  AF -->|"4 export"| GCS
+  AF -->|"5 announce"| PS
+  VM -.->|"host.docker.internal:8080"| MS
+</pre>
+      </div>
+      <p class="caption">
+        Terraform drives two transports: the GCP REST API for infrastructure, and <code>docker exec</code>
+        for everything that has to happen inside the VM. The dotted edge is the one the emulator has to
+        provide — without it nothing on the VM can reach the APIs.
+      </p>
+    </section>
+
+    <section id="daemon">
+      <div class="sec-head"><span class="n">01</span><h2>Start the emulator with a real SQL engine</h2></div>
+      <p>
+        By default MiniSky answers BigQuery calls with an in-memory mock — enough for
+        <code>terraform apply</code> to succeed, useless for a pipeline, since every query returns zero
+        rows. One environment variable swaps in an embedded DuckDB that executes real SQL and persists
+        to <code>~/.minisky/data/bigquery.duckdb</code>.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>host</span><span class="tag">bash</span></div>
+        <pre><code><span class="prompt">$</span> MINISKY_BQ_BACKEND=duckdb minisky start
+<span class="c-cmt"># API gateway  → http://localhost:8080</span>
+<span class="c-cmt"># Dashboard    → http://localhost:8081</span></code></pre>
+      </div>
+      <div class="check">
+        <span class="lbl">Verify</span>
+        <pre><span class="prompt">$</span> curl -s localhost:8080/compute/v1/projects/p/global/networks | head -c 60
+{"kind":"compute#networkList","items":[...</pre>
+      </div>
+      <div class="note">
+        <span class="lbl">CGO</span>
+        <p>
+          The DuckDB backend needs <code>CGO_ENABLED=1</code>. The published Linux release has it; the
+          macOS and Windows builds fall back to the empty-result mock, so build from source there.
+        </p>
+      </div>
+    </section>
+
+    <section id="provider">
+      <div class="sec-head"><span class="n">02</span><h2>Point the Google provider at localhost</h2></div>
+      <p>
+        The stock <code>hashicorp/google</code> provider with per-service endpoint overrides — no
+        plugin, no fork. MiniSky routes by URL prefix, so each service gets the path its API uses.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>versions.tf</span><span class="tag">hcl</span></div>
+        <pre><code>terraform {
+  required_version = <span class="c-str">"&gt;= 1.5.0"</span>
+
+  required_providers {
+    google = {
+      source  = <span class="c-str">"hashicorp/google"</span>
+      version = <span class="c-str">"~&gt; 5.45"</span>
+    }
+  }
+}</code></pre>
+      </div>
+      <div class="block">
+        <div class="block-bar"><span>providers.tf</span><span class="tag">hcl</span></div>
+        <pre><code><span class="c-key">provider</span> <span class="c-str">"google"</span> {
+  project = var.project_id
+  region  = var.region
+  zone    = var.zone
+
+  <span class="c-cmt"># Any well-formed bearer token is accepted. access_token avoids the</span>
+  <span class="c-cmt"># local ASN.1 key-parsing errors a mock credentials JSON triggers.</span>
+  access_token = <span class="c-str">"minisky-local-token"</span>
+
+  storage_custom_endpoint   = <span class="c-str">"${local.minisky_endpoint}/storage/v1/"</span>
+  compute_custom_endpoint   = <span class="c-str">"${local.minisky_endpoint}/compute/v1/"</span>
+  big_query_custom_endpoint = <span class="c-str">"${local.minisky_endpoint}/bigquery/v2/"</span>
+  pubsub_custom_endpoint    = <span class="c-str">"${local.minisky_endpoint}/"</span>
+}</code></pre>
+      </div>
+      <p>
+        Pin to the 5.x line: newer majors send request shapes the shims have not been validated
+        against.
+      </p>
+      <div class="note">
+        <span class="lbl">Which services are reachable</span>
+        <p>
+          Usable prefixes: <code>/storage/</code>, <code>/bigquery/</code>, <code>/compute/</code>,
+          <code>/v1/projects/*/topics|subscriptions</code>. A Cloud SQL shim exists but no route
+          reaches it, so <code>google_sql_database_instance</code> fails. Design around what routes.
+        </p>
+      </div>
+    </section>
+
+    <section id="network">
+      <div class="sec-head"><span class="n">03</span><h2>Firewall rules before the VM, or you lose the install</h2></div>
+      <p>
+        MiniSky maps a VPC onto a Docker bridge network, and turns an <code>INGRESS allow</code> rule
+        into a published port by <em>tearing down and re-provisioning every VM on that network</em> —
+        Docker can only fix port bindings at container-create time.
+      </p>
+      <p>
+        Create the VM first and the rules second, and the container is rebuilt after Airflow was
+        installed onto it. Terraform reports success; everything you installed is gone.
+      </p>
+      <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  N["google_compute_network"] --> F1["firewall: airflow 8080"]
+  N --> F2["firewall: trino 8090"]
+  F1 --> VM["google_compute_instance<br/>depends_on both rules"]
+  F2 --> VM
+  VM --> R["terraform_data.vm_ready"]
+  R --> I["terraform_data.install_stack<br/>apt · python · airflow · dbt"]
+  I --> D["terraform_data.deploy_pipeline<br/>DAGs · dbt project · env.sh"]
+  D --> S["terraform_data.start_services"]
+</pre>
+      </div>
+      <p class="caption">
+        Each stage is its own node, so editing a dbt model redeploys the code without reinstalling
+        Airflow. The <code>depends_on</code> into the VM is load-bearing.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>network.tf</span><span class="tag">hcl</span></div>
+        <pre><code><span class="c-cmt"># auto_create_subnetworks is true on purpose: the compute shim routes</span>
+<span class="c-cmt"># /global/networks and /global/firewalls but has no subnetworks handler,</span>
+<span class="c-cmt"># so a google_compute_subnetwork resource would 404.</span>
+<span class="c-key">resource</span> <span class="c-str">"google_compute_network"</span> <span class="c-str">"pipeline"</span> {
+  name                    = <span class="c-str">"${var.name_prefix}-analytics-vpc"</span>
+  auto_create_subnetworks = <span class="c-num">true</span>
+}
+
+<span class="c-key">resource</span> <span class="c-str">"google_compute_firewall"</span> <span class="c-str">"airflow_ui"</span> {
+  name      = <span class="c-str">"${var.name_prefix}-allow-airflow-ui"</span>
+  network   = google_compute_network.pipeline.name
+  direction = <span class="c-str">"INGRESS"</span>
+
+  allow {
+    protocol = <span class="c-str">"tcp"</span>
+    ports    = [<span class="c-fn">tostring</span>(var.airflow_port)]
+  }
+
+  source_ranges = [<span class="c-str">"0.0.0.0/0"</span>]
+}</code></pre>
+      </div>
+      <div class="block">
+        <div class="block-bar"><span>compute.tf</span><span class="tag">hcl</span></div>
+        <pre><code>  <span class="c-cmt"># Load-bearing. See above.</span>
+  depends_on = [
+    google_compute_firewall.airflow_ui,
+    google_compute_firewall.trino_ui,
+  ]</code></pre>
+      </div>
+      <div class="check">
+        <span class="lbl">Verify — after the VM exists</span>
+        <pre><span class="prompt">$</span> docker port minisky-vm-analytics-orchestrator
+8080/tcp -&gt; 127.0.0.1:36781
+8090/tcp -&gt; 127.0.0.1:40501</pre>
+      </div>
+      <p>
+        Docker assigns host ports at create time and they change on every rebuild. Read them back with
+        <code>docker port</code> rather than hardcoding.
+      </p>
+    </section>
+
+    <section id="data">
+      <div class="sec-head"><span class="n">04</span><h2>Lake, warehouse and event bus</h2></div>
+      <p>
+        Three buckets by zone, three datasets in a medallion layout, one topic. The subtlety is
+        ownership: Terraform declares the <em>raw</em> tables and the staging and marts
+        <em>datasets</em>, then stops. Tables inside staging and marts belong to dbt — two tools
+        managing one object is how you get a permanent diff.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>storage.tf · bigquery.tf</span><span class="tag">hcl</span></div>
+        <pre><code><span class="c-key">resource</span> <span class="c-str">"google_storage_bucket"</span> <span class="c-str">"raw"</span> {
+  name          = local.buckets.raw
+  location      = <span class="c-str">"US"</span>
+  force_destroy = <span class="c-num">true</span>
+}
+
+<span class="c-cmt"># Seed data lands in the lake, so the DAG's first task reads from GCS</span>
+<span class="c-cmt"># exactly as it would against real Google Cloud Storage.</span>
+<span class="c-key">resource</span> <span class="c-str">"google_storage_bucket_object"</span> <span class="c-str">"seed_orders"</span> {
+  name         = <span class="c-str">"seeds/orders/raw_orders.csv"</span>
+  bucket       = google_storage_bucket.raw.name
+  source       = <span class="c-str">"${path.module}/seeds/raw_orders.csv"</span>
+  content_type = <span class="c-str">"text/csv"</span>
+}
+
+<span class="c-key">resource</span> <span class="c-str">"google_bigquery_table"</span> <span class="c-str">"raw_orders"</span> {
+  dataset_id          = google_bigquery_dataset.raw.dataset_id
+  table_id            = <span class="c-str">"orders"</span>
+  deletion_protection = <span class="c-num">false</span>
+
+  schema = <span class="c-fn">jsonencode</span>([
+    { name = <span class="c-str">"order_id"</span>,    type = <span class="c-str">"INT64"</span>,  mode = <span class="c-str">"REQUIRED"</span> },
+    { name = <span class="c-str">"customer_id"</span>, type = <span class="c-str">"INT64"</span>,  mode = <span class="c-str">"REQUIRED"</span> },
+    { name = <span class="c-str">"order_date"</span>,  type = <span class="c-str">"DATE"</span>,   mode = <span class="c-str">"REQUIRED"</span> },
+    { name = <span class="c-str">"unit_price"</span>,  type = <span class="c-str">"FLOAT64"</span>,mode = <span class="c-str">"REQUIRED"</span> },
+  ])
+}</code></pre>
+      </div>
+      <p>
+        A table declared with a schema is materialised in DuckDB as
+        <code>&lt;dataset&gt;__&lt;table&gt;</code> — the same name the SQL translator rewrites
+        <code>project.dataset.table</code> to at query time, which is why
+        <code>SELECT * FROM retail_raw.orders</code> resolves.
+      </p>
+    </section>
+
+    <section id="vm">
+      <div class="sec-head"><span class="n">05</span><h2>The VM is a container, and that shapes two choices</h2></div>
+      <p>
+        A <code>google_compute_instance</code> becomes a Docker container named
+        <code>minisky-vm-&lt;instance&gt;</code>, booted with <code>tail -f /dev/null</code>. Two
+        consequences.
+      </p>
+      <p>
+        <strong>The boot image is a Docker image.</strong> <code>initialize_params.image</code> takes a
+        family id (<code>ubuntu-2404-lts</code>, <code>debian-12</code>) or a raw Docker reference like
+        <code>python:3.12-slim</code>. Prefer 24.04 — it ships Python 3.12, which Airflow supports, so
+        provisioning downloads no interpreter.
+      </p>
+      <p>
+        <strong>There is no guest agent.</strong> <code>metadata.startup-script</code> is stored but
+        never executed, and with no SSH daemon <code>remote-exec</code> has nothing to connect to.
+        Software arrives another way — next step.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>compute.tf</span><span class="tag">hcl</span></div>
+        <pre><code><span class="c-key">resource</span> <span class="c-str">"google_compute_instance"</span> <span class="c-str">"orchestrator"</span> {
+  name         = var.vm_name
+  machine_type = <span class="c-str">"n1-standard-4"</span>
+  zone         = var.zone
+
+  boot_disk {
+    initialize_params {
+      image = <span class="c-str">"ubuntu-2404-lts"</span>
+    }
+  }
+
+  network_interface {
+    network = google_compute_network.pipeline.name
+    access_config {}
+  }
+
+  metadata = {
+    <span class="c-cmt"># Kept for parity with real GCE. MiniSky stores it but does not run</span>
+    <span class="c-cmt"># it, so the same steps are driven from provision.tf instead.</span>
+    startup-script = <span class="c-fn">file</span>(<span class="c-str">"${path.module}/scripts/startup-script.sh"</span>)
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="sec-head"><span class="n">06</span><h2>Installing software onto the VM from Terraform</h2></div>
+      <p>
+        The transport is <code>docker exec</code> against the container backing the instance, driven by
+        <code>local-exec</code>. Terraform keeps the whole lifecycle: infrastructure, OS packages,
+        application code, running services.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>provision.tf</span><span class="tag">hcl</span></div>
+        <pre><code><span class="c-key">resource</span> <span class="c-str">"terraform_data"</span> <span class="c-str">"install_stack"</span> {
+  triggers_replace = [
+    terraform_data.vm_ready.id,
+    <span class="c-fn">filesha256</span>(<span class="c-str">"${path.module}/scripts/install_stack.sh"</span>),
+    local.guest_fingerprint,   <span class="c-cmt"># hash of every file in scripts/guest</span>
+    var.airflow_version,
+    var.dbt_bigquery_version,
+  ]
+
+  provisioner <span class="c-str">"local-exec"</span> {
+    command     = <span class="c-str">"${path.module}/scripts/install_stack.sh"</span>
+    environment = local.provision_env
+  }
+}</code></pre>
+      </div>
+      <p>
+        The host script copies a guest installer into the container and runs it. Each stage writes a
+        marker file, so a re-apply redoes only what is missing.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>scripts/install_stack.sh</span><span class="tag">bash</span></div>
+        <pre><code>docker exec <span class="c-str">"$VM_CONTAINER"</span> mkdir -p /opt/pipeline/{bootstrap,cache,logs,.state}
+docker cp ./guest/. <span class="c-str">"${VM_CONTAINER}:/opt/pipeline/bootstrap/"</span>
+
+docker exec \
+  -e <span class="c-str">"MINISKY_ENDPOINT=${GUEST_ENDPOINT}"</span> \
+  -e <span class="c-str">"AIRFLOW_VERSION=${AIRFLOW_VERSION}"</span> \
+  -e <span class="c-str">"DEBIAN_FRONTEND=noninteractive"</span> \
+  <span class="c-str">"$VM_CONTAINER"</span> bash /opt/pipeline/bootstrap/install.sh</code></pre>
+      </div>
+
+      <h3>The VM has to be able to reach the emulator</h3>
+      <p>
+        <code>GUEST_ENDPOINT</code> is not <code>localhost</code> — inside the container that is the
+        container. Which address works depends on the setup, so probe rather than guess: on Docker
+        Desktop the daemon runs in its own VM and only <code>host.docker.internal</code> resolves; on
+        plain Docker Engine the gateway is the host.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>scripts/lib.sh</span><span class="tag">bash</span></div>
+        <pre><code><span class="c-fn">guest_endpoint</span>() {
+  <span class="c-key">local</span> container=<span class="c-str">"$1"</span> port=<span class="c-str">"${2:-8080}"</span> candidate gw
+  gw=<span class="c-str">"$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$container")"</span>
+
+  <span class="c-key">for</span> candidate <span class="c-key">in</span> host.docker.internal <span class="c-str">"$gw"</span> 172.17.0.1; <span class="c-key">do</span>
+    <span class="c-key">if</span> docker exec <span class="c-str">"$container"</span> \
+         curl -sf -m 3 -o /dev/null <span class="c-str">"http://${candidate}:${port}/compute/v1/projects/probe/global/networks"</span>; <span class="c-key">then</span>
+      <span class="c-fn">printf</span> <span class="c-str">'http://%s:%s'</span> <span class="c-str">"$candidate"</span> <span class="c-str">"$port"</span>; <span class="c-key">return</span> 0
+    <span class="c-key">fi</span>
+  <span class="c-key">done</span>
+}</code></pre>
+      </div>
+      <h3>Use the image's Python, and never upgrade pip in place</h3>
+      <p>
+        Ubuntu 24.04 ships Python 3.12, which Airflow 2.10 supports, so check for a usable interpreter
+        before downloading one. Install through <code>python -m pip</code>: upgrading pip inside a fresh
+        venv leaves the <code>bin/pip</code> console script pointing at internals the new version moved,
+        surfacing later as an unrelated-looking
+        <code>ImportError: cannot import name 'open_rich_spinner'</code>.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>scripts/guest/install.sh</span><span class="tag">bash</span></div>
+        <pre><code>SUPPORTED_PYTHONS=<span class="c-str">"3.9 3.10 3.11 3.12"</span>
+system_version=<span class="c-str">"$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"</span>
+
+<span class="c-fn">make_venv</span>() {
+  <span class="c-cmt"># Deliberately no `pip install --upgrade pip` here.</span>
+  <span class="c-str">"$SYSTEM_PYTHON"</span> -m venv <span class="c-str">"$1"</span>
+}
+
+<span class="c-fn">venv_install</span>() {
+  <span class="c-key">local</span> venv=<span class="c-str">"$1"</span>; <span class="c-key">shift</span>
+  <span class="c-str">"$venv/bin/python"</span> -m pip install --quiet --retries 10 --timeout 60 <span class="c-str">"$@"</span>
+}
+
+<span class="c-fn">venv_install</span> <span class="c-str">"$AIRFLOW_VENV"</span> <span class="c-str">"apache-airflow==${AIRFLOW_VERSION}"</span> --constraint <span class="c-str">"$CONSTRAINTS"</span></code></pre>
+      </div>
+    </section>
+
+    <section id="auth">
+      <div class="sec-head"><span class="n">07</span><h2>Making dbt authenticate against an emulator</h2></div>
+      <p>
+        <code>dbt-bigquery</code> has no endpoint setting and no anonymous auth mode: left alone it
+        calls <code>google.auth.default()</code>, finds no credentials and fails. Two patches to the
+        client library fix it without touching a dbt file — point <code>bigquery.Client</code> at the
+        emulator, and return anonymous credentials.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>scripts/guest/minisky_bq_shim.py</span><span class="tag">python</span></div>
+        <pre><code>_ENDPOINT = os.environ.get(<span class="c-str">"MINISKY_ENDPOINT"</span>)
+
+<span class="c-key">if</span> _ENDPOINT:
+    os.environ.setdefault(<span class="c-str">"BIGQUERY_EMULATOR_HOST"</span>, _ENDPOINT)
+
+    <span class="c-key">def</span> <span class="c-fn">_install_anonymous_credentials</span>():
+        <span class="c-key">import</span> google.auth
+        <span class="c-key">from</span> google.auth.credentials <span class="c-key">import</span> AnonymousCredentials
+
+        <span class="c-key">def</span> <span class="c-fn">_minisky_default</span>(*_a, **_kw):
+            <span class="c-key">return</span> AnonymousCredentials(), _PROJECT
+
+        google.auth.default = _minisky_default
+
+    <span class="c-key">def</span> <span class="c-fn">_install_bigquery_endpoint</span>():
+        <span class="c-key">from</span> google.cloud <span class="c-key">import</span> bigquery
+        _original_init = bigquery.Client.__init__
+
+        <span class="c-key">def</span> <span class="c-fn">_patched_init</span>(self, *args, **kwargs):
+            kwargs[<span class="c-str">"client_options"</span>] = ClientOptions(api_endpoint=_ENDPOINT)
+            <span class="c-key">if</span> kwargs.get(<span class="c-str">"credentials"</span>) <span class="c-key">is</span> <span class="c-num">None</span>:
+                kwargs[<span class="c-str">"credentials"</span>] = AnonymousCredentials()
+            <span class="c-key">return</span> _original_init(self, *args, **kwargs)
+
+        bigquery.Client.__init__ = _patched_init</code></pre>
+      </div>
+      <p>
+        Load it with a <code>.pth</code> file, <strong>not</strong> by naming it
+        <code>sitecustomize.py</code>. Only one <code>sitecustomize</code> can win, and Ubuntu ships its
+        own at <code>/usr/lib/python3.12/sitecustomize.py</code>, which precedes site-packages on
+        <code>sys.path</code>. A shim by that name is never imported, and the only symptom is dbt
+        failing to authenticate with no explanation.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>scripts/guest/install.sh</span><span class="tag">bash</span></div>
+        <pre><code>DBT_SITE=<span class="c-str">"$(${DBT_VENV}/bin/python -c 'import site; print(site.getsitepackages()[0])')"</span>
+install -m 0644 <span class="c-str">"${PIPELINE_HOME}/bootstrap/minisky_bq_shim.py"</span> <span class="c-str">"${DBT_SITE}/"</span>
+<span class="c-fn">printf</span> <span class="c-str">'import minisky_bq_shim\n'</span> &gt; <span class="c-str">"${DBT_SITE}/zz_minisky_bq_shim.pth"</span>
+
+<span class="c-cmt"># Fail here, loudly, rather than at dbt's first query.</span>
+<span class="c-str">"${DBT_VENV}/bin/python"</span> -c <span class="c-str">'import sys, minisky_bq_shim; sys.exit(0 if minisky_bq_shim._ENDPOINT else 1)'</span> \
+  || { <span class="c-fn">echo</span> <span class="c-str">"shim did not pick up MINISKY_ENDPOINT"</span> &gt;&amp;2; <span class="c-key">exit</span> 1; }</code></pre>
+      </div>
+      <div class="check">
+        <span class="lbl">Verify</span>
+        <pre><span class="prompt">$</span> dbt debug --profiles-dir /opt/pipeline/dbt
+  Connection test: <span class="c-ok">[OK connection ok]</span>
+<span class="c-ok">All checks passed!</span></pre>
+      </div>
+    </section>
+
+    <section id="dbt">
+      <div class="sec-head"><span class="n">08</span><h2>The dbt project is ordinary</h2></div>
+      <p>
+        That is the whole claim of this setup. The profile is a stock <code>bigquery</code> target with
+        <code>method: oauth</code> — nothing in it mentions the emulator, because the shim handles that
+        outside the file. Delete the shim, set real credentials, and the same project runs against
+        BigQuery proper.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>pipeline/dbt/profiles.yml</span><span class="tag">yaml</span></div>
+        <pre><code>minisky_analytics:
+  target: local
+  outputs:
+    local:
+      type: bigquery
+      method: oauth
+      project: <span class="c-str">"{{ env_var('MINISKY_PROJECT') }}"</span>
+      dataset: <span class="c-str">"{{ env_var('BQ_DATASET_STAGING') }}"</span>
+      location: US
+      threads: 1</code></pre>
+      </div>
+      <div class="block">
+        <div class="block-bar"><span>models/marts/fct_daily_revenue.sql</span><span class="tag">sql</span></div>
+        <pre><code><span class="c-cmt">-- Cancelled and returned orders are excluded from revenue but still</span>
+<span class="c-cmt">-- counted, so the loss stays visible.</span>
+<span class="c-key">with</span> orders <span class="c-key">as</span> (
+    <span class="c-key">select</span> * <span class="c-key">from</span> {{ <span class="c-fn">ref</span>(<span class="c-str">'stg_orders'</span>) }}
+)
+
+<span class="c-key">select</span>
+    order_date,
+    <span class="c-fn">count</span>(*) <span class="c-key">as</span> orders_total,
+    <span class="c-fn">sum</span>(<span class="c-key">case when</span> is_lost_order <span class="c-key">then</span> <span class="c-num">1</span> <span class="c-key">else</span> <span class="c-num">0</span> <span class="c-key">end</span>) <span class="c-key">as</span> orders_lost,
+    <span class="c-fn">count</span>(<span class="c-key">distinct</span> customer_id) <span class="c-key">as</span> unique_customers,
+    <span class="c-fn">round</span>(<span class="c-fn">sum</span>(<span class="c-key">case when</span> is_lost_order <span class="c-key">then</span> <span class="c-num">0</span> <span class="c-key">else</span> net_revenue <span class="c-key">end</span>), <span class="c-num">2</span>) <span class="c-key">as</span> net_revenue
+<span class="c-key">from</span> orders
+<span class="c-key">group by</span> order_date</code></pre>
+      </div>
+      <p>
+        Sources reach the Terraform-owned raw dataset through <code>env_var</code>, so the single
+        <code>env.sh</code> Terraform writes configures both Airflow and dbt.
+      </p>
+    </section>
+
+    <section id="dag">
+      <div class="sec-head"><span class="n">09</span><h2>The DAG: extract, load, transform, publish</h2></div>
+      <p>
+        Five stages. The only emulator-specific thing in the file is the endpoint it reads from the
+        environment.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>pipeline/dags/retail_analytics_pipeline.py</span><span class="tag">python</span></div>
+        <pre><code><span class="c-key">@task</span>
+<span class="c-key">def</span> <span class="c-fn">announce_raw_loaded</span>(results: list[dict]) -&gt; <span class="c-num">None</span>:
+    client = MiniSky.from_env()
+    <span class="c-cmt"># A mapped task's collected XComs arrive as a lazy sequence, which the</span>
+    <span class="c-cmt"># JSON encoder cannot serialise — materialise it before it goes into</span>
+    <span class="c-cmt"># a message body.</span>
+    client.publish(
+        PUBSUB_TOPIC,
+        {<span class="c-str">"event"</span>: <span class="c-str">"raw.loaded"</span>, <span class="c-str">"tables"</span>: <span class="c-fn">list</span>(results)},
+        attributes={<span class="c-str">"stage"</span>: <span class="c-str">"raw"</span>},
+    )
+
+dbt_build = <span class="c-fn">BashOperator</span>(
+    task_id=<span class="c-str">"dbt_build"</span>,
+    bash_command=(
+        <span class="c-str">f"cd {DBT_PROJECT_DIR} &amp;&amp; "</span>
+        <span class="c-str">f"{DBT_BIN} build --profiles-dir {DBT_PROFILES_DIR} --target local"</span>
+    ),
+)
+
+checked &gt;&gt; loaded &gt;&gt; raw_event &gt;&gt; dbt_build &gt;&gt; extract &gt;&gt; announce_marts_published(extract)</code></pre>
+      </div>
+      <p>
+        <code>load_source</code> is a dynamically mapped task, one per source object. The
+        <code>list()</code> is not cosmetic — without it the task dies with
+        <code>TypeError: Object of type LazyXComSelectSequence is not JSON serializable</code>.
+      </p>
+    </section>
+
+    <section id="apply">
+      <div class="sec-head"><span class="n">10</span><h2>Apply, verify, run</h2></div>
+      <p>
+        Plan first. The first apply takes about eleven minutes on a clean emulator, nearly all of it
+        pip resolving Airflow's dependency tree.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>host</span><span class="tag">bash</span></div>
+        <pre><code><span class="prompt">$</span> terraform init
+<span class="prompt">$</span> terraform plan          <span class="c-cmt"># read it: 20 to add on a clean emulator</span>
+<span class="prompt">$</span> terraform apply
+<span class="c-ok">Apply complete! Resources: 20 added, 0 changed, 0 destroyed.</span></code></pre>
+      </div>
+      <p>
+        Then prove the infrastructure is real rather than merely declared: each check calls the
+        emulated API the way an application would.
+      </p>
+      <div class="block">
+        <div class="block-bar"><span>host</span><span class="tag">bash</span></div>
+        <pre><code><span class="prompt">$</span> ./scripts/verify_infra.sh
+  <span class="c-ok">✓</span> VM is attached to the pipeline VPC network
+  <span class="c-ok">✓</span> host port published for Airflow (container 8080)
+  <span class="c-ok">✓</span> VM can reach the MiniSky gateway
+  <span class="c-ok">✓</span> bucket retail-analytics-raw exists
+  <span class="c-ok">✓</span> table retail_raw.orders is queryable
+  <span class="c-ok">✓</span> publishing to retail-ingestion-events succeeds
+  <span class="c-ok">✓</span> dbt can connect to the emulated warehouse
+  <span class="c-ok">33 passed</span>, 0 failed
+
+<span class="prompt">$</span> ./scripts/run_pipeline.sh
+  <span class="c-ok">✓</span> DAG run manual__20260830T040530 succeeded
+
+<span class="prompt">$</span> ./scripts/verify_infra.sh --data
+  <span class="c-ok">✓</span> mart fct_daily_revenue built and populated
+  <span class="c-ok">✓</span> curated extract written to gs://retail-analytics-curated
+  <span class="c-ok">41 passed</span>, 0 failed</code></pre>
+      </div>
+      <p>
+        Query the warehouse directly to confirm the numbers survived the round trip — decimals intact
+        and dates typed as dates, not everything flattened to strings.
+      </p>
+      <div class="check">
+        <span class="lbl">Verify — the marts hold real values</span>
+        <pre><span class="prompt">$</span> curl -s -X POST localhost:8080/bigquery/v2/projects/$PROJECT/queries \
+    -H 'Content-Type: application/json' \
+    -d '{"query":"SELECT order_date, orders_total, net_revenue
+                  FROM retail_marts.fct_daily_revenue ORDER BY order_date","useLegacySql":false}'
+
+order_date | orders_total | net_revenue
+2026-07-01 |            7 |     2893.11
+2026-07-02 |           10 |     4654.69
+2026-07-03 |            6 |     1427.59</pre>
+      </div>
+      <p>
+        Airflow's UI is on the published host port, <code>admin</code> / <code>admin</code>. Read the
+        port back with <code>docker port minisky-vm-analytics-orchestrator 8080</code>.
+      </p>
+    </section>
+
+    <section id="failures">
+      <div class="sec-head"><span class="n">11</span><h2>Failure modes worth recognising</h2></div>
+      <p>
+        Each row is a real failure from building this, with the symptom you will actually see. All of
+        them are silent or misattributed, which is what makes them expensive.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Airflow installed, no host port published</td>
+              <td>Firewall rules created after the VM, so the container was rebuilt after provisioning</td>
+              <td><code>depends_on</code> the rules from the instance</td>
+            </tr>
+            <tr>
+              <td>dbt: <code>'NoneType' object has no attribute 'close'</code></td>
+              <td>Auth shim named <code>sitecustomize.py</code>, shadowed by the distro's own</td>
+              <td>Load it from a <code>.pth</code> file</td>
+            </tr>
+            <tr>
+              <td><code>ImportError: cannot import name 'open_rich_spinner'</code></td>
+              <td><code>pip install --upgrade pip</code> inside a fresh venv</td>
+              <td>Call <code>python -m pip</code>; skip the self-upgrade</td>
+            </tr>
+            <tr>
+              <td><code>TypeError: LazyXComSelectSequence is not JSON serializable</code></td>
+              <td>A mapped task's XComs passed straight into a JSON body</td>
+              <td><code>list(results)</code></td>
+            </tr>
+            <tr>
+              <td><code>No address associated with hostname</code> mid-install</td>
+              <td>Intermittent DNS through Docker's embedded resolver</td>
+              <td>Append fallback resolvers; give pip <code>--retries 10</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <span class="lbl">After restarting the emulator</span>
+        <p>
+          Dataset and table metadata is in-memory. Restart MiniSky and the next <code>plan</code> sees
+          every dataset as missing and proposes to recreate it, rebuilding the VM and reinstalling the
+          toolchain. Keep the daemon up for a working session.
+        </p>
+      </div>
+    </section>
+
+    <section id="limits">
+      <div class="sec-head"><span class="n">12</span><h2>What this does not give you</h2></div>
+      <p>
+        The pipeline is real — objects on disk, SQL execution, Airflow scheduling. The emulation
+        boundary is worth stating before anyone reads a green run as a production guarantee.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Area</th><th>Reality</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>SQL dialect</td><td>DuckDB, not BigQuery. <code>TIMESTAMP_TRUNC</code> and <code>SAFE_DIVIDE</code> are not translated — keep models to portable SQL.</td></tr>
+            <tr><td>IAM</td><td>Any well-formed token is accepted. Policy bugs will not surface here.</td></tr>
+            <tr><td>Load jobs</td><td>BigQuery load jobs cannot read <code>gs://</code> URIs, so the DAG ingests through inserts instead.</td></tr>
+            <tr><td>Subnetworks</td><td>No <code>/regions/*/subnetworks</code> route; auto-mode VPCs only.</td></tr>
+            <tr><td>Cloud SQL</td><td>A shim exists but no route reaches it from Terraform.</td></tr>
+            <tr><td>Quotas, slots, cost</td><td>Not modelled. Performance here says nothing about performance there.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        What it does give you: an analytics stack you can destroy and rebuild in minutes, run offline,
+        and hand to someone on their first day without an IAM request — from the same HCL, DAG and dbt
+        models you would deploy for real.
+      </p>
+    </section>
+
+    <footer>
+      Verified end to end against MiniSky v1.4.1 on Docker Desktop 29.2.1, Terraform 1.16.0, google
+      provider 5.45.2. Working source:
+      <a href="https://github.com/qamarudeenm/minisky/tree/main/examples/analytics-pipeline" target="_blank" rel="noopener">github.com/qamarudeenm/minisky &rarr; examples/analytics-pipeline</a>.
+    </footer>
+  </main>
+</div>
+
+<script>
+  // Render the Mermaid diagrams when nothing else already has.
+  //
+  // Published as an artifact, the host renders `pre.mermaid` itself. Opened as a
+  // local file there is no renderer, so the diagram source shows as raw text.
+  // Wait briefly for a host renderer to claim the blocks, and only load Mermaid
+  // if they are still unrendered.
+  (function () {
+    var CDN = "https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.3.0/mermaid.min.js";
+
+    function unrendered() {
+      var blocks = document.querySelectorAll("pre.mermaid");
+      if (!blocks.length) return false;
+      for (var i = 0; i < blocks.length; i++) {
+        if (blocks[i].querySelector("svg")) return false;
+        if (blocks[i].getAttribute("data-processed")) return false;
+      }
+      return true;
+    }
+
+    function theme() {
+      var stamped = document.documentElement.getAttribute("data-theme");
+      if (stamped === "dark") return "dark";
+      if (stamped === "light") return "neutral";
+      return window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral";
+    }
+
+    function render() {
+      if (!unrendered()) return;
+
+      var tag = document.createElement("script");
+      tag.src = CDN;
+      tag.onload = function () {
+        if (!window.mermaid) return;
+        window.mermaid.initialize({
+          startOnLoad: false,
+          theme: theme(),
+          securityLevel: "strict",
+          fontFamily: '"JetBrains Mono", ui-monospace, monospace'
+        });
+        window.mermaid.run({ querySelector: "pre.mermaid" });
+      };
+      // Offline, or the CDN is blocked: the source stays readable as text.
+      document.head.appendChild(tag);
+    }
+
+    function schedule() { setTimeout(render, 400); }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", schedule, { once: true });
+    } else {
+      schedule();
+    }
+  })();
+</script>
+
+<script>
+  // Highlight the step the reader is currently in.
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.rail-nav a'));
+    var targets = links
+      .map(function (a) {
+        var el = document.getElementById(a.getAttribute('href').slice(1));
+        return el ? { link: a, el: el } : null;
+      })
+      .filter(Boolean);
+
+    if (!targets.length || !('IntersectionObserver' in window)) return;
+
+    var visible = new Set();
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) visible.add(entry.target);
+        else visible.delete(entry.target);
+      });
+
+      var current = targets.filter(function (t) { return visible.has(t.el); })[0];
+      if (!current) return;
+      targets.forEach(function (t) { t.link.classList.toggle('is-active', t === current); });
+    }, { rootMargin: '-8% 0px -70% 0px' });
+
+    targets.forEach(function (t) { observer.observe(t.el); });
+  })();
+</script>

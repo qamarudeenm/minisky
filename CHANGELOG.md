@@ -5,6 +5,16 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-08-30
+
+### Fixed
+- **macOS install: no longer prompts for password when run via `curl | sh`** — the installer
+  unconditionally used `sudo` to copy the binary to `/usr/local/bin`, but when a script is piped
+  through `curl | sh` there is no real TTY attached to stdin, so `sudo` cannot read the password
+  and loops indefinitely (issue #6). The installer now tries a direct write first (Homebrew-managed
+  macOS typically makes `/usr/local/bin` user-writable), falls back to `sudo` only when a real
+  terminal is present, and as a last resort installs to `~/.local/bin` with clear PATH instructions.
+
 ## [1.4.1] - 2026-08-30
 
 1.4.0 made dbt able to *talk* to MiniSky. Actually running the pipeline in

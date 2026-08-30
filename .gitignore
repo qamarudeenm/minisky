@@ -58,6 +58,7 @@ docs/*
 !docs/contribution-guide.md
 !docs/changelog.md
 !docs/cli_reference.md
+!docs/analytics-pipeline-tutorial.html
 
 
 DESIGN.md

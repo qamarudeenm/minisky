@@ -67,9 +67,43 @@ if [ "$OS" = "windows" ]; then
     echo "✅ MiniSky binary ($BIN_OUT) is ready in the current directory."
     echo "To use it globally, add this folder to your Windows PATH."
 else
-    echo "🚀 Installing '$BIN_OUT' to /usr/local/bin..."
-    sudo mv "./$BIN_OUT" "/usr/local/bin/$BIN_OUT"
-    sudo chmod +x "/usr/local/bin/$BIN_OUT"
+    INSTALL_DIR="/usr/local/bin"
+
+    # Attempt a password-free install first.
+    # On Homebrew-managed macOS, /usr/local/bin is often user-writable.
+    # When the script is piped through `curl | sh` there is no real TTY,
+    # so an unconditional `sudo` prompt breaks (issue #6).
+    if [ -w "$INSTALL_DIR" ]; then
+        echo "🚀 Installing '$BIN_OUT' to $INSTALL_DIR (no sudo needed)..."
+        mv "./$BIN_OUT" "$INSTALL_DIR/$BIN_OUT"
+        chmod +x "$INSTALL_DIR/$BIN_OUT"
+    else
+        # Fall back to sudo, but warn the user why they're being prompted.
+        # If the script was piped through curl, sudo may not be able to read
+        # the password from stdin. In that case we install to ~/.local/bin instead.
+        if [ -t 0 ]; then
+            # stdin is a real terminal — sudo can prompt safely.
+            echo "🔑 Admin access needed to install to $INSTALL_DIR (your macOS user password):"
+            sudo mv "./$BIN_OUT" "$INSTALL_DIR/$BIN_OUT"
+            sudo chmod +x "$INSTALL_DIR/$BIN_OUT"
+            echo "✅ Installed to $INSTALL_DIR/$BIN_OUT"
+        else
+            # No TTY (e.g. curl | sh) — avoid a broken sudo prompt.
+            FALLBACK_DIR="$HOME/.local/bin"
+            mkdir -p "$FALLBACK_DIR"
+            mv "./$BIN_OUT" "$FALLBACK_DIR/$BIN_OUT"
+            chmod +x "$FALLBACK_DIR/$BIN_OUT"
+            echo "✅ Installed to $FALLBACK_DIR/$BIN_OUT (no sudo required)"
+            echo ""
+            echo "⚠️  '$FALLBACK_DIR' may not be on your PATH."
+            echo "   Add the following line to your shell profile (~/.zshrc or ~/.bash_profile):"
+            echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
+            echo "   Then run: source ~/.zshrc  (or open a new terminal)"
+            echo ""
+            echo "   Alternatively, re-run the installer directly in your terminal (not via curl pipe):"
+            echo "   curl -fsSL https://minisky.bmics.com.ng/install.sh -o install.sh && bash install.sh"
+        fi
+    fi
 fi
 
 if [ -f "minisky.$EXT" ]; then
