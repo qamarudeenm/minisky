@@ -2,7 +2,7 @@
 #
 # The adapter is the stock dbt-bigquery adapter. Two things make it talk to
 # MiniSky instead of Google, and both live outside this file:
-#   • sitecustomize.py in the dbt virtualenv points the client at
+#   • minisky_bq_shim.py in the dbt virtualenv points the client at
 #     MINISKY_ENDPOINT and swaps in anonymous credentials;
 #   • terraform writes MINISKY_* into /opt/pipeline/env.sh.
 #

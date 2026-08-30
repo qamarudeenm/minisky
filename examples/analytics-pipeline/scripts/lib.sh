@@ -47,21 +47,38 @@ vm_exec_env() {
   docker exec -i "$container" bash -lc "set -a; . '$envfile'; set +a; $*"
 }
 
-# guest_endpoint <container> — the URL the VM should use to reach MiniSky.
-# A container cannot use 'localhost' for a service on the host, so resolve the
-# gateway address of the Docker network MiniSky attached the VM to.
+# guest_endpoint <container> [port] — the URL the VM should use to reach MiniSky.
+#
+# A container cannot reach a host service as 'localhost', and which address does
+# work depends on the setup: on Docker Desktop the daemon runs in its own VM, so
+# the bridge gateway is not the host and only host.docker.internal resolves;
+# on plain Docker Engine the network gateway is the host. Rather than guess, try
+# each candidate from inside the container and keep the first that answers.
 guest_endpoint() {
-  local container="$1" port="${2:-8080}" gw=""
+  local container="$1" port="${2:-8080}" candidate gw
   gw="$(docker inspect -f \
     '{{range $k, $v := .NetworkSettings.Networks}}{{if $v.Gateway}}{{$v.Gateway}} {{end}}{{end}}' \
     "$container" 2>/dev/null | awk '{print $1}')"
-  [[ -n "$gw" ]] || gw="172.17.0.1"
-  printf 'http://%s:%s' "$gw" "$port"
+
+  for candidate in host.docker.internal "$gw" 172.17.0.1; do
+    [[ -n "$candidate" ]] || continue
+    if docker exec "$container" \
+         curl -sf -m 3 -o /dev/null "http://${candidate}:${port}/compute/v1/projects/probe/global/networks" 2>/dev/null; then
+      printf 'http://%s:%s' "$candidate" "$port"
+      return 0
+    fi
+  done
+
+  # Nothing answered — fall back to the gateway so the caller still gets a URL
+  # and the failure surfaces where it is diagnosable.
+  printf 'http://%s:%s' "${gw:-172.17.0.1}" "$port"
 }
 
 # published_port <container> <container_port> — host port Docker bound, or "".
+# `docker port` exits non-zero when nothing is bound, which would abort a caller
+# running under `set -e`; an unbound port is a normal state here, not an error.
 published_port() {
-  docker port "$1" "$2/tcp" 2>/dev/null | head -n1 | awk -F: '{print $NF}'
+  docker port "$1" "$2/tcp" 2>/dev/null | head -n1 | awk -F: '{print $NF}' || true
 }
 
 # minisky_api <method> <path> [body] — call the MiniSky gateway from the host.

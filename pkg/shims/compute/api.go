@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -299,6 +300,82 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Instances
 // ─────────────────────────────────────────────────────────────────────────────
 
+// containerMappingLabel records which Docker container backs an instance.
+// This used to be written into Description, which silently overwrote whatever
+// description the caller had set — leaving terraform with permanent drift it
+// then could not reconcile.
+const containerMappingLabel = "minisky-container"
+
+// setContainerMapping records the backing container without disturbing
+// user-owned fields. A description is only synthesised when the caller supplied
+// none, so the dashboard still has something to show for hand-made instances.
+func (i *Instance) setContainerMapping(containerName string) {
+	if i.Labels == nil {
+		i.Labels = map[string]string{}
+	}
+	i.Labels[containerMappingLabel] = containerName
+	if i.Description == "" {
+		i.Description = fmt.Sprintf("Docker Container ID mapping: %s", containerName)
+	}
+}
+
+// updateInstance handles instances.update / instances.patch. GCE reconciles the
+// mutable fields in place; without this the shim answered 405 and any drift —
+// including drift the shim itself introduced — made terraform apply fail.
+func (api *API) updateInstance(w http.ResponseWriter, r *http.Request, project, zone, name string) {
+	if name == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeError(w, 400, "INVALID_ARGUMENT", "Instance name is required")
+		return
+	}
+
+	var body struct {
+		Description *string           `json:"description"`
+		Labels      map[string]string `json:"labels"`
+		Metadata    *InstanceMetadata `json:"metadata"`
+		Status      *string           `json:"status"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+
+	key := instanceKey(project, zone, name)
+	api.mu.Lock()
+	inst, ok := api.instances[key]
+	if ok {
+		if body.Description != nil {
+			inst.Description = *body.Description
+		}
+		if body.Labels != nil {
+			// The container mapping is shim-owned: preserve it across an update
+			// that does not know about it.
+			if mapping, had := inst.Labels[containerMappingLabel]; had {
+				if _, sent := body.Labels[containerMappingLabel]; !sent {
+					body.Labels[containerMappingLabel] = mapping
+				}
+			}
+			inst.Labels = body.Labels
+		}
+		if body.Metadata != nil {
+			inst.Metadata = body.Metadata
+			if inst.Metadata.Items == nil {
+				inst.Metadata.Items = []MetadataItem{}
+			}
+		}
+	}
+	api.mu.Unlock()
+
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		writeError(w, 404, "NOT_FOUND", "Instance "+name+" not found")
+		return
+	}
+
+	op := api.opMgr.Register("compute#operation", "update", selfLinkInstance(project, zone, name), zone, "")
+	op.Kind = "compute#operation"
+	api.opMgr.RunAsync(op.Name, func() error { return nil })
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(op)
+}
+
 func (api *API) routeInstances(w http.ResponseWriter, r *http.Request, path string) {
 	project, zone := extractProjectZone(path)
 
@@ -326,6 +403,8 @@ func (api *API) routeInstances(w http.ResponseWriter, r *http.Request, path stri
 		} else {
 			api.listInstances(w, r, project, zone)
 		}
+	case http.MethodPatch, http.MethodPut:
+		api.updateInstance(w, r, project, zone, instanceName)
 	case http.MethodDelete:
 		api.deleteInstance(w, r, project, zone, instanceName)
 	default:
@@ -506,7 +585,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 			api.mu.Lock()
 			if i, ok := api.instances[key]; ok {
 				i.Status = "RUNNING"
-				i.Description = fmt.Sprintf("Docker Container ID mapping: %s", containerName)
+				i.setContainerMapping(containerName)
 			}
 			api.mu.Unlock()
 			return nil
@@ -552,7 +631,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 			time.Sleep(1500 * time.Millisecond)
 
 			i.Status = "RUNNING"
-			i.Description = fmt.Sprintf("Docker Container ID mapping: %s", containerName)
+			i.setContainerMapping(containerName)
 		}
 		api.mu.Unlock()
 		return nil
@@ -1191,6 +1270,86 @@ func randomNumericID() string {
 // Firewall Rules
 // ─────────────────────────────────────────────────────────────────────────────
 
+// firewallEffect derives what a rule actually permits from the resource as GCE
+// models it. A firewall has no `action` field: allow versus deny is expressed by
+// which of `allowed` / `denied` is populated, and the ports live inside those
+// entries rather than at the top level.
+//
+// Registering a rule without reading them left every entry with an empty port
+// list and an empty action, so allowedPortsForVPC — which matches on
+// action == "allow" — never returned a port and no VM ever got a published host
+// port, making services inside an emulated VM unreachable from the host.
+func firewallEffect(rule *FirewallRule) (action, protocol string, ports []string) {
+	// An explicitly declared action wins — the dashboard sets one, and a rule
+	// marked "deny" must stay a deny however its ports are expressed. The real
+	// API has no such field, so a rule that arrives without one (everything
+	// Terraform sends) is classified by which list is populated.
+	entries := rule.Allowed
+	switch {
+	case strings.EqualFold(rule.Action, "deny"):
+		action = "deny"
+		if len(rule.Denied) > 0 {
+			entries = rule.Denied
+		}
+	case len(rule.Allowed) > 0:
+		action = "allow"
+	case len(rule.Denied) > 0:
+		action = "deny"
+		entries = rule.Denied
+	default:
+		// Neither list populated: fall back to whatever the caller declared.
+		return rule.Action, "all", nil
+	}
+	if len(entries) == 0 {
+		return action, "all", nil
+	}
+
+	protocol = "all"
+	for _, entry := range entries {
+		if entry.IPProtocol != "" {
+			protocol = entry.IPProtocol
+		}
+		for _, port := range entry.Ports {
+			ports = append(ports, expandPortRange(port)...)
+		}
+	}
+	return action, protocol, ports
+}
+
+// maxExpandedPorts caps how many ports a single range may contribute. Docker
+// binds each port individually, so a rule like "0-65535" would otherwise try to
+// publish every port on the host.
+const maxExpandedPorts = 64
+
+// expandPortRange turns "8080" into ["8080"] and "8080-8082" into
+// ["8080","8081","8082"], skipping ranges too large to bind.
+func expandPortRange(port string) []string {
+	low, high, found := strings.Cut(port, "-")
+	if !found {
+		return []string{port}
+	}
+
+	start, err := strconv.Atoi(strings.TrimSpace(low))
+	if err != nil {
+		return nil
+	}
+	end, err := strconv.Atoi(strings.TrimSpace(high))
+	if err != nil || end < start {
+		return nil
+	}
+	if end-start+1 > maxExpandedPorts {
+		log.Printf("[Shim: Compute] port range %s spans more than %d ports — not binding it to the host",
+			port, maxExpandedPorts)
+		return nil
+	}
+
+	expanded := make([]string, 0, end-start+1)
+	for p := start; p <= end; p++ {
+		expanded = append(expanded, strconv.Itoa(p))
+	}
+	return expanded
+}
+
 func (api *API) routeFirewalls(w http.ResponseWriter, r *http.Request, path string) {
 	project := extractProject(path)
 	name := extractAfterGlobal(path, "firewalls")
@@ -1248,13 +1407,19 @@ func (api *API) createFirewall(w http.ResponseWriter, r *http.Request, project s
 	// ApplyFirewallPortsToVPC always look this up by short name (derived via
 	// extractNameFromURL), so registering under the full URL would make the lookup
 	// permanently miss.
+	action, protocol, ports := firewallEffect(&body)
+	direction := body.Direction
+	if direction == "" {
+		direction = "INGRESS" // GCE's default
+	}
+
 	api.svcMgr.RegisterFirewallRule(extractNameFromURL(body.Network), orchestrator.FirewallEntry{
 		Name:      body.Name,
 		VpcName:   extractNameFromURL(body.Network),
-		Direction: body.Direction,
-		Action:    body.Action,
-		Protocol:  "all", // default, will refine below
-		Ports:     []string{},
+		Direction: direction,
+		Action:    action,
+		Protocol:  protocol,
+		Ports:     ports,
 		Ranges:    append(body.SourceRanges, body.DestinationRanges...),
 	})
 
@@ -1436,14 +1601,28 @@ func (api *API) getAllowedPortsForVPC(vpcName string) []string {
 	defer api.mu.RUnlock()
 	ports := []string{}
 	for _, rule := range api.firewalls {
-		nw := extractNameFromURL(rule.Network)
-		if (nw == vpcName || (nw == "" && vpcName == "default")) && rule.Direction == "INGRESS" && rule.Action == "allow" {
-			for _, allowed := range rule.Allowed {
-				for _, p := range allowed.Ports {
-					ports = append(ports, p)
-				}
-			}
+		if rule.Disabled {
+			continue
 		}
+		nw := extractNameFromURL(rule.Network)
+		if nw != vpcName && !(nw == "" && vpcName == "default") {
+			continue
+		}
+		direction := rule.Direction
+		if direction == "" {
+			direction = "INGRESS" // GCE's default
+		}
+		if direction != "INGRESS" {
+			continue
+		}
+		// Allow/deny and the port list both come from the allowed/denied
+		// entries. Matching on rule.Action here meant matching on a field GCE
+		// does not populate, so no rule ever contributed a port.
+		action, _, rulePorts := firewallEffect(rule)
+		if action != "allow" {
+			continue
+		}
+		ports = append(ports, rulePorts...)
 	}
 	return ports
 }

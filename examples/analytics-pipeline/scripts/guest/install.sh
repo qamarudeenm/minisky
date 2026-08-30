@@ -44,6 +44,31 @@ retry() {
   done
 }
 
+# ── 0. DNS resilience ────────────────────────────────────────────────────────
+# The VM inherits the host's resolver through Docker's embedded DNS. When that
+# resolver is intermittently unhealthy, package downloads fail partway through
+# with "No address associated with hostname" — and because the failures come and
+# go, a one-shot preflight check passes and the install still dies minutes later.
+# Public resolvers are therefore appended unconditionally as *fallbacks*: the
+# host's resolver is still tried first, and this only changes behaviour when it
+# fails to answer.
+ensure_dns() {
+  local resolver
+  for resolver in 1.1.1.1 8.8.8.8; do
+    grep -q "nameserver ${resolver}" /etc/resolv.conf 2>/dev/null && continue
+    printf 'nameserver %s\n' "$resolver" >> /etc/resolv.conf 2>/dev/null || {
+      say "WARNING: /etc/resolv.conf is not writable; relying on the host resolver alone"
+      return 0
+    }
+  done
+
+  local host
+  for host in pypi.org files.pythonhosted.org raw.githubusercontent.com; do
+    getent hosts "$host" >/dev/null 2>&1 || say "WARNING: ${host} does not resolve yet"
+  done
+}
+ensure_dns
+
 # ── 1. Base OS packages ──────────────────────────────────────────────────────
 # python3 is needed by Trino's launcher; procps/curl/git by Airflow and dbt.
 if done_marker base; then
@@ -106,8 +131,11 @@ fi
 # make_venv <path> — build a virtualenv with whichever interpreter we settled on.
 make_venv() {
   if [[ -n "$SYSTEM_PYTHON" ]]; then
+    # Deliberately no `pip install --upgrade pip`: upgrading pip in place leaves
+    # the bin/pip console script pointing at internals the new version moved,
+    # which fails as "cannot import name open_rich_spinner". Every pip call
+    # below goes through `python -m pip`, which is immune to that.
     "$SYSTEM_PYTHON" -m venv "$1"
-    "$1/bin/python" -m pip install --quiet --upgrade pip
   else
     uv venv --python "${PYTHON_VERSION}" "$1" >/dev/null
   fi
@@ -120,7 +148,8 @@ venv_install() {
   if [[ -z "$SYSTEM_PYTHON" ]] || command -v uv >/dev/null 2>&1; then
     VIRTUAL_ENV="$venv" uv pip install "$@" >/dev/null
   else
-    "$venv/bin/pip" install --quiet "$@"
+    "$venv/bin/python" -m pip install --quiet --disable-pip-version-check \
+      --retries 10 --timeout 60 "$@"
   fi
 }
 
@@ -160,8 +189,22 @@ fi
 
 # The auth shim must land in the dbt venv's site-packages on every run: a dbt
 # upgrade can replace the directory.
+#
+# It is loaded through a .pth file rather than being named sitecustomize.py.
+# Only one sitecustomize module can win, and the distro ships its own at
+# /usr/lib/python3.12/sitecustomize.py — which comes earlier on sys.path than
+# site-packages, so a shim by that name is silently never imported and dbt
+# fails to authenticate with no indication why. A .pth file whose line starts
+# with "import" is executed by `site` on every interpreter start and cannot be
+# shadowed this way.
 DBT_SITE="$(${DBT_VENV}/bin/python -c 'import site; print(site.getsitepackages()[0])')"
-install -m 0644 "${PIPELINE_HOME}/bootstrap/sitecustomize.py" "${DBT_SITE}/sitecustomize.py"
+install -m 0644 "${PIPELINE_HOME}/bootstrap/minisky_bq_shim.py" "${DBT_SITE}/minisky_bq_shim.py"
+printf 'import minisky_bq_shim\n' > "${DBT_SITE}/zz_minisky_bq_shim.pth"
+# Fail loudly here rather than at dbt's first query.
+if ! "${DBT_VENV}/bin/python" -c 'import sys, minisky_bq_shim; sys.exit(0 if getattr(minisky_bq_shim, "_ENDPOINT", None) else 1)'; then
+  echo "MiniSky shim did not pick up MINISKY_ENDPOINT — dbt will not authenticate" >&2
+  exit 1
+fi
 say "MiniSky auth shim installed into ${DBT_SITE}"
 
 # ── 5. Trino (optional) ──────────────────────────────────────────────────────

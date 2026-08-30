@@ -123,6 +123,29 @@ Editing a dbt model or the DAG and re-running `terraform apply` redeploys the co
 Point `MINISKY_ENDPOINT` and the provider endpoints at real GCP and the DAG, the dbt project and
 the Terraform all run unchanged.
 
+## Verified end to end
+
+Against MiniSky built from this repository (`MINISKY_BQ_BACKEND=duckdb`), on Docker Desktop:
+
+```
+scripts/verify_infra.sh --data     41 passed, 0 failed
+scripts/run_pipeline.sh            DAG run succeeded
+```
+
+The DAG loads the seed CSVs from the emulated GCS bucket into BigQuery, dbt builds two staging
+models and three marts and runs 14 tests against them, the headline mart is exported back to the
+curated bucket, and each stage announces itself on Pub/Sub. `fct_daily_revenue` ends up holding 30
+days of revenue:
+
+| order_date | orders_total | net_revenue |
+|---|---|---|
+| 2026-07-01 | 7 | 2893.11 |
+| 2026-07-02 | 10 | 4654.69 |
+| 2026-07-03 | 6 | 1427.59 |
+
+Getting there required nine fixes to MiniSky itself — see [FIDELITY-NOTES.md](FIDELITY-NOTES.md).
+On a MiniSky older than those fixes this example will not complete.
+
 ## Troubleshooting
 
 | Symptom | Cause |

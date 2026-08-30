@@ -27,9 +27,9 @@ type Operation struct {
 	Progress      int             `json:"progress"`
 	Done          bool            `json:"done"`
 	// InsertTime / StartTime / EndTime in RFC3339 format
-	InsertTime string `json:"insertTime,omitempty"`
-	StartTime  string `json:"startTime,omitempty"`
-	EndTime    string `json:"endTime,omitempty"`
+	InsertTime string      `json:"insertTime,omitempty"`
+	StartTime  string      `json:"startTime,omitempty"`
+	EndTime    string      `json:"endTime,omitempty"`
 	Metadata   interface{} `json:"metadata,omitempty"`
 	// Error is only set when the operation fails.
 	Error *OperationError `json:"error,omitempty"`
@@ -163,11 +163,11 @@ func (om *OperationManager) RunAsync(name string, workFn func() error) {
 	go func() {
 		// 1. Initial delay to ensure the caller (Terraform/UI) registers the initial PENDING state
 		time.Sleep(800 * time.Millisecond)
-		
+
 		// 2. Transition PENDING → RUNNING (Low progress)
 		om.Advance(name, 5, StatusRunning)
 		time.Sleep(1200 * time.Millisecond)
-		
+
 		// 3. Increment progress to show life before work starts
 		om.Advance(name, 25, StatusRunning)
 		time.Sleep(500 * time.Millisecond)
@@ -177,7 +177,7 @@ func (om *OperationManager) RunAsync(name string, workFn func() error) {
 			om.Fail(name, 500, err.Error())
 			return
 		}
-		
+
 		// 5. Successful work completion - show high progress before finishing
 		om.Advance(name, 85, StatusRunning)
 		time.Sleep(500 * time.Millisecond)

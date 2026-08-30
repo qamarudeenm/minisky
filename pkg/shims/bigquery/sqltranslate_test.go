@@ -174,3 +174,76 @@ func TestFormatCell(t *testing.T) {
 		t.Errorf("BOOL = %v, want true", got)
 	}
 }
+
+// Every dbt model materialisation carries an OPTIONS(...) clause. DuckDB has no
+// such clause, so without stripping it no dbt model can be built:
+//
+//	Database Error in model stg_orders
+//	  500 Parser Error: syntax error at or near "OPTIONS"
+func TestStripsOptionsClauseFromDDL(t *testing.T) {
+	cases := []struct {
+		name string
+		sql  string
+		want []string // substrings that must survive
+		gone []string // substrings that must not
+	}{
+		{
+			name: "dbt table materialisation",
+			sql: "create or replace table `p`.`retail_staging`.`stg_orders` " +
+				`OPTIONS(description="", expiration_timestamp=NULL) as (select 1 as id)`,
+			want: []string{"create or replace table", "retail_staging__stg_orders", "select 1 as id"},
+			gone: []string{"OPTIONS", "expiration_timestamp"},
+		},
+		{
+			name: "nested parens and a string holding a bracket",
+			sql:  "create table `p`.`d`.`t` OPTIONS(labels=[(\"a\", \"b)\")], description=\"x\") as select 1",
+			want: []string{"create table", "d__t", "select 1"},
+			gone: []string{"OPTIONS", "labels"},
+		},
+		{
+			name: "view with options",
+			sql:  "create or replace view `p`.`d`.`v` OPTIONS(description=\"a view\") as select 1",
+			want: []string{"create or replace view", "d__v"},
+			gone: []string{"OPTIONS"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := translateBQtoDuck(tc.sql)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("translated SQL lost %q:\n%s", want, got)
+				}
+			}
+			for _, gone := range tc.gone {
+				if strings.Contains(got, gone) {
+					t.Errorf("translated SQL still carries %q:\n%s", gone, got)
+				}
+			}
+		})
+	}
+}
+
+// "options" is a perfectly good column or alias name in a query, and a query is
+// not DDL — neither may be touched.
+func TestLeavesOptionsAloneOutsideDDL(t *testing.T) {
+	for _, sql := range []string{
+		"select options from d.t",
+		"select t.options, count(*) from d.t group by 1",
+		"select 'OPTIONS(x)' as literal from d.t",
+	} {
+		got := translateBQtoDuck(sql)
+		if !strings.Contains(strings.ToLower(got), "options") {
+			t.Errorf("translate(%q) stripped a legitimate identifier: %s", sql, got)
+		}
+	}
+}
+
+// An unbalanced clause must leave the statement intact rather than truncating it.
+func TestUnbalancedOptionsClauseIsLeftAlone(t *testing.T) {
+	sql := "create table d.t OPTIONS(description=\"x\" as select 1"
+	if got := translateBQtoDuck(sql); !strings.Contains(got, "OPTIONS") {
+		t.Errorf("an unbalanced clause should be left untouched, got: %s", got)
+	}
+}

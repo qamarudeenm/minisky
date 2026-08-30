@@ -72,24 +72,56 @@ func (p *ProxyRouter) RegisterLazyDocker(domain string) {
 	log.Printf("[Router] Registered Lazy Docker Backend: %s (boots on first request)", domain)
 }
 
+// isGoogleServiceHost reports whether a Host header names a Google API domain,
+// in which case the request is routed by domain rather than by URL prefix.
+func isGoogleServiceHost(host string) bool {
+	if idx := strings.Index(host, ":"); idx >= 0 {
+		host = host[:idx]
+	}
+	return strings.HasSuffix(host, "googleapis.com") ||
+		strings.HasSuffix(host, "google.com") ||
+		strings.HasSuffix(host, "firebaseio.com") ||
+		strings.HasSuffix(host, "google.internal")
+}
+
+// pathMappedDomain maps a request path onto the service that owns it, or ""
+// when no prefix matches.
+func pathMappedDomain(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/storage/") || strings.HasPrefix(path, "/upload/storage/"):
+		return "storage.googleapis.com"
+	case strings.HasPrefix(path, "/bigquery/"):
+		return "bigquery.googleapis.com"
+	case (strings.HasPrefix(path, "/v1/projects/") || strings.HasPrefix(path, "/projects/")) &&
+		(strings.Contains(path, "/topics") || strings.Contains(path, "/subscriptions")):
+		return "pubsub.googleapis.com"
+	case strings.HasPrefix(path, "/v2/") ||
+		(strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/locations/")):
+		return "cloudfunctions.googleapis.com"
+	case strings.HasPrefix(path, "/compute/"):
+		return "compute.googleapis.com"
+	default:
+		return ""
+	}
+}
+
 func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	targetDomain := r.Host
-	
-	// 1. Support Path-based Routing for local requests (Terraform/CLI)
-	if strings.Contains(targetDomain, "localhost") || strings.Contains(targetDomain, "127.0.0.1") {
-		path := r.URL.Path
-		if strings.HasPrefix(path, "/storage/") || strings.HasPrefix(path, "/upload/storage/") {
-			targetDomain = "storage.googleapis.com"
-		} else if strings.HasPrefix(path, "/bigquery/") {
-			targetDomain = "bigquery.googleapis.com"
-		} else if (strings.HasPrefix(path, "/v1/projects/") || strings.HasPrefix(path, "/projects/")) && (strings.Contains(path, "/topics") || strings.Contains(path, "/subscriptions")) {
-			targetDomain = "pubsub.googleapis.com"
-		} else if strings.HasPrefix(path, "/v2/") || (strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/locations/")) {
-			targetDomain = "cloudfunctions.googleapis.com"
-		} else if strings.HasPrefix(path, "/compute/") {
-			targetDomain = "compute.googleapis.com"
+
+	// 1. Path-based routing.
+	//
+	// Clients that target the emulator by address rather than by Google's
+	// hostnames — Terraform's custom_endpoint, the CLI, and anything running
+	// inside an emulated VM calling http://host.docker.internal:8080 — carry a
+	// Host header that names no GCP service. Route those by URL prefix.
+	//
+	// Requests that already name a Google domain keep domain-based routing, so
+	// an SDK pointed at bigquery.googleapis.com still reaches its shim.
+	if !isGoogleServiceHost(targetDomain) {
+		if mapped := pathMappedDomain(r.URL.Path); mapped != "" {
+			targetDomain = mapped
+			log.Printf("[Router] Path-mapped request from %s: %s -> %s", r.Host, r.URL.Path, targetDomain)
 		}
-		log.Printf("[Router] Path-mapped local request: %s -> %s", r.URL.Path, targetDomain)
 	}
 
 	// 2. Subdomain Flattening (e.g. project-id.firebaseio.com -> firebaseio.com)

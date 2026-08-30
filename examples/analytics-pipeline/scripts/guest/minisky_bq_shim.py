@@ -15,6 +15,11 @@ Two things stand between dbt-bigquery and a local emulator:
    dbt-bigquery exposes no profile field for that, so the endpoint is injected
    here.
 
+Loaded by ``zz_minisky_bq_shim.pth`` in the same site-packages directory, which
+``site`` executes on every interpreter start. It is deliberately *not* named
+``sitecustomize.py``: Ubuntu ships one in the stdlib directory, which precedes
+site-packages on ``sys.path``, so a shim by that name never runs.
+
 Both patches are inert unless ``MINISKY_ENDPOINT`` (or ``MINISKY_BQ_ENDPOINT``)
 is set, so the same virtualenv still behaves normally against real GCP.
 """

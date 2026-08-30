@@ -705,6 +705,13 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 		"HostConfig": map[string]interface{}{
 			"NetworkMode":  netMode,
 			"PortBindings": portBindings,
+			// Without this the VM has no route to the emulator: a container
+			// cannot reach a host service through its bridge gateway on Docker
+			// Desktop, where the daemon itself runs in a VM. Anything running
+			// inside an emulated VM — Terraform, dbt, Airflow, an app under test
+			// — needs to call the MiniSky gateway, so give every VM the same
+			// host.docker.internal name Docker Desktop users already expect.
+			"ExtraHosts": []string{"host.docker.internal:host-gateway"},
 		},
 	}
 	if len(cmd) > 0 {
@@ -721,7 +728,29 @@ func (sm *ServiceManager) ProvisionComputeVM(containerName string, osImage strin
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict { // 409
+	if resp.StatusCode == http.StatusConflict { // 409: a container by this name is already here
+		// Adopting it would silently ignore everything this call asked for —
+		// Docker fixes the image and the port bindings at create time, so a
+		// stale container comes back with no published ports and possibly the
+		// wrong image, while the API still reports a freshly created VM.
+		// Replace it instead, which is what "create this instance" means.
+		log.Printf("[Orchestrator] Container '%s' already exists — replacing it so the requested image and ports take effect", containerName)
+		if err := sm.StopAndRemoveContainer(containerName); err != nil {
+			return fmt.Errorf("replace existing container %q: %v", containerName, err)
+		}
+
+		req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
+		req.Header.Set("Content-Type", "application/json")
+		retryResp, retryErr := sm.dockerClient.Do(req)
+		if retryErr != nil {
+			return retryErr
+		}
+		defer retryResp.Body.Close()
+		if retryResp.StatusCode >= 400 {
+			b, _ := io.ReadAll(retryResp.Body)
+			return fmt.Errorf("vm creation rejected after replacing the existing container %d: %s", retryResp.StatusCode, b)
+		}
+	} else if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("vm creation rejected %d: %s", resp.StatusCode, b)
 	}

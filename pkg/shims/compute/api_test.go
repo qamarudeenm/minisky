@@ -380,3 +380,156 @@ func TestNetworkReportsFirewallPolicyEnforcementOrder(t *testing.T) {
 		t.Errorf("field missing from the response body: %s", encoded)
 	}
 }
+
+// The shim used to write "Docker Container ID mapping: …" straight into
+// Description, overwriting whatever the caller set. Terraform then saw drift on
+// every plan and could not fix it, because instances answered 405 to updates.
+func TestSetContainerMappingPreservesDescription(t *testing.T) {
+	instance := &Instance{Description: "Airflow + dbt host"}
+	instance.setContainerMapping("minisky-vm-orchestrator")
+
+	if instance.Description != "Airflow + dbt host" {
+		t.Errorf("description was overwritten: %q", instance.Description)
+	}
+	if instance.Labels[containerMappingLabel] != "minisky-vm-orchestrator" {
+		t.Errorf("container mapping not recorded: %v", instance.Labels)
+	}
+}
+
+func TestSetContainerMappingFillsAnEmptyDescription(t *testing.T) {
+	instance := &Instance{}
+	instance.setContainerMapping("minisky-vm-orchestrator")
+
+	if !strings.Contains(instance.Description, "minisky-vm-orchestrator") {
+		t.Errorf("an instance with no description should still show its container: %q",
+			instance.Description)
+	}
+}
+
+func TestUpdateInstanceAppliesMutableFields(t *testing.T) {
+	api := NewAPI(orchestrator.NewOperationManager(), nil)
+	key := instanceKey("demo", "us-central1-a", "vm")
+	api.instances[key] = &Instance{
+		Name:        "vm",
+		Description: "stale",
+		Labels:      map[string]string{containerMappingLabel: "minisky-vm-vm"},
+	}
+
+	req := httptest.NewRequest(http.MethodPatch,
+		"/compute/v1/projects/demo/zones/us-central1-a/instances/vm",
+		strings.NewReader(`{"description":"orchestrator","labels":{"role":"analytics"}}`))
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH instance = %d, want 200 (used to be 405)", rec.Code)
+	}
+	updated := api.instances[key]
+	if updated.Description != "orchestrator" {
+		t.Errorf("description = %q, want orchestrator", updated.Description)
+	}
+	if updated.Labels["role"] != "analytics" {
+		t.Errorf("labels not applied: %v", updated.Labels)
+	}
+	if updated.Labels[containerMappingLabel] != "minisky-vm-vm" {
+		t.Errorf("shim-owned container mapping was dropped by an update: %v", updated.Labels)
+	}
+}
+
+// A GCE firewall carries no "action" field and keeps its ports inside the
+// allowed/denied entries. The shim used to register neither, so
+// allowedPortsForVPC never matched a rule and no VM was ever given a published
+// host port — services inside an emulated VM were unreachable from the host.
+func TestFirewallEffectReadsAllowedEntries(t *testing.T) {
+	rule := &FirewallRule{
+		Direction: "INGRESS",
+		Allowed:   []FirewallAllow{{IPProtocol: "tcp", Ports: []string{"8080", "8090"}}},
+	}
+	action, protocol, ports := firewallEffect(rule)
+
+	if action != "allow" {
+		t.Errorf("action = %q, want allow", action)
+	}
+	if protocol != "tcp" {
+		t.Errorf("protocol = %q, want tcp", protocol)
+	}
+	if len(ports) != 2 || ports[0] != "8080" || ports[1] != "8090" {
+		t.Errorf("ports = %v, want [8080 8090]", ports)
+	}
+}
+
+func TestFirewallEffectReadsDeniedEntries(t *testing.T) {
+	rule := &FirewallRule{
+		Direction: "INGRESS",
+		Denied:    []FirewallAllow{{IPProtocol: "tcp", Ports: []string{"22"}}},
+	}
+	action, _, ports := firewallEffect(rule)
+	if action != "deny" {
+		t.Errorf("action = %q, want deny", action)
+	}
+	if len(ports) != 1 || ports[0] != "22" {
+		t.Errorf("ports = %v, want [22]", ports)
+	}
+}
+
+func TestExpandPortRange(t *testing.T) {
+	if got := expandPortRange("8080"); len(got) != 1 || got[0] != "8080" {
+		t.Errorf("single port = %v", got)
+	}
+	if got := expandPortRange("8080-8082"); len(got) != 3 || got[2] != "8082" {
+		t.Errorf("range = %v, want three ports", got)
+	}
+	// Docker binds every port individually, so an enormous range must not be
+	// expanded into thousands of host bindings.
+	if got := expandPortRange("0-65535"); got != nil {
+		t.Errorf("oversized range expanded to %d ports, want none", len(got))
+	}
+	if got := expandPortRange("not-a-port"); got != nil {
+		t.Errorf("malformed range = %v, want none", got)
+	}
+}
+
+// End-to-end at the shim boundary: create a firewall the way Terraform does,
+// then ask for the ports a VM on that network should publish. This is the path
+// insertInstance takes, and it used to return nothing.
+func TestGetAllowedPortsForVPCReadsCreatedRules(t *testing.T) {
+	api := NewAPI(orchestrator.NewOperationManager(), orchestrator.NewServiceManagerForTesting(&fakeTransport{}))
+
+	body := `{"name":"allow-airflow","network":"https://www.googleapis.com/compute/v1/projects/demo/global/networks/analytics-vpc",` +
+		`"direction":"INGRESS","allowed":[{"IPProtocol":"tcp","ports":["8080","8090"]}],"sourceRanges":["0.0.0.0/0"]}`
+	req := httptest.NewRequest(http.MethodPost,
+		"/compute/v1/projects/demo/global/firewalls", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("firewall create = %d, want 200", rec.Code)
+	}
+
+	ports := api.getAllowedPortsForVPC("analytics-vpc")
+	if len(ports) != 2 {
+		t.Fatalf("ports = %v, want [8080 8090] — a VM on this network publishes nothing without them", ports)
+	}
+
+	// A rule on another network must not leak in.
+	if other := api.getAllowedPortsForVPC("unrelated-vpc"); len(other) != 0 {
+		t.Errorf("ports leaked to an unrelated VPC: %v", other)
+	}
+}
+
+func TestGetAllowedPortsForVPCIgnoresDeniedAndDisabled(t *testing.T) {
+	api := NewAPI(orchestrator.NewOperationManager(), orchestrator.NewServiceManagerForTesting(&fakeTransport{}))
+	network := "https://www.googleapis.com/compute/v1/projects/demo/global/networks/vpc"
+
+	for _, body := range []string{
+		`{"name":"deny-ssh","network":"` + network + `","direction":"INGRESS","denied":[{"IPProtocol":"tcp","ports":["22"]}]}`,
+		`{"name":"disabled","network":"` + network + `","direction":"INGRESS","disabled":true,"allowed":[{"IPProtocol":"tcp","ports":["9999"]}]}`,
+		`{"name":"egress","network":"` + network + `","direction":"EGRESS","allowed":[{"IPProtocol":"tcp","ports":["7777"]}]}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/compute/v1/projects/demo/global/firewalls", strings.NewReader(body))
+		api.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	if ports := api.getAllowedPortsForVPC("vpc"); len(ports) != 0 {
+		t.Errorf("ports = %v; denied, disabled and egress rules must not publish anything", ports)
+	}
+}

@@ -529,3 +529,77 @@ func TestDeleteComputeVM(t *testing.T) {
 		})
 	}
 }
+
+// Docker fixes a container's image and port bindings at create time, so adopting
+// a container that already exists silently discards what the caller asked for —
+// the VM comes back with no published ports while the API reports a fresh
+// create. Provisioning must replace it instead.
+func TestProvisionComputeVM_ReplacesExistingContainer(t *testing.T) {
+	var created, removed int
+	firstCreate := true
+
+	ft := &fakeTransport{handler: func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == "POST" && strings.HasPrefix(req.URL.Path, "/containers/create"):
+			created++
+			if firstCreate {
+				firstCreate = false
+				return jsonResp(http.StatusConflict, `{"message":"container name already in use"}`)
+			}
+			return jsonResp(http.StatusCreated, `{"Id":"abc123"}`)
+		case req.Method == "DELETE":
+			removed++
+			return jsonResp(http.StatusNoContent, "")
+		case req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/stop"):
+			return jsonResp(http.StatusNoContent, "")
+		case req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/start"):
+			return jsonResp(http.StatusNoContent, "")
+		case req.Method == "GET" && strings.HasSuffix(req.URL.Path, "/json"):
+			return jsonResp(http.StatusOK, `{"NetworkSettings":{"Ports":{}}}`)
+		default:
+			return jsonResp(http.StatusOK, "{}")
+		}
+	}}
+
+	sm := NewServiceManagerForTesting(ft)
+	if err := sm.ProvisionComputeVM("my-vm", "ubuntu:24.04", []string{"vpc"}, []string{"8080"}, nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if removed == 0 {
+		t.Error("the pre-existing container was adopted rather than removed")
+	}
+	if created != 2 {
+		t.Errorf("got %d create calls, want 2 (the conflicting one, then the replacement)", created)
+	}
+}
+
+// A VM with no route to the host cannot call the emulated GCP APIs at all,
+// which is the entire point of running a workload inside one. Docker Desktop
+// runs the daemon in its own VM, so the bridge gateway is not the host — the
+// host-gateway mapping is what makes host.docker.internal resolve.
+func TestProvisionComputeVM_GivesVMsARouteToTheHost(t *testing.T) {
+	var createBody string
+	ft := &fakeTransport{handler: func(req *http.Request) (*http.Response, error) {
+		if req.Method == "POST" && strings.HasPrefix(req.URL.Path, "/containers/create") {
+			if req.Body != nil {
+				body, _ := io.ReadAll(req.Body)
+				createBody = string(body)
+			}
+			return jsonResp(http.StatusCreated, `{"Id":"abc123"}`)
+		}
+		if req.Method == "GET" && strings.HasSuffix(req.URL.Path, "/json") {
+			return jsonResp(http.StatusOK, `{"NetworkSettings":{"Ports":{}}}`)
+		}
+		return jsonResp(http.StatusOK, "{}")
+	}}
+
+	sm := NewServiceManagerForTesting(ft)
+	if err := sm.ProvisionComputeVM("my-vm", "ubuntu:24.04", []string{"vpc"}, nil, nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(createBody, "host.docker.internal:host-gateway") {
+		t.Errorf("container create carries no host-gateway mapping: %s", createBody)
+	}
+}

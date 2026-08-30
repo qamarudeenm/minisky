@@ -37,8 +37,12 @@ docker exec "$VM_CONTAINER" test -x /opt/trino/bin/launcher 2>/dev/null \
 
 printf '  Airflow           : %-12s %s\n' "$af_state" \
   "${airflow_host_port:+http://127.0.0.1:${airflow_host_port}  (admin / admin)}"
-printf '  Trino             : %-12s %s\n' "$tr_state" \
-  "${trino_host_port:+http://127.0.0.1:${trino_host_port}}"
+# A port is published for Trino whenever the firewall rule exists, but printing
+# a URL for a service that was never installed only invites a confusing click.
+trino_url=""
+[[ "$tr_state" != "not installed" && -n "$trino_host_port" ]] &&
+  trino_url="http://127.0.0.1:${trino_host_port}"
+printf '  Trino             : %-12s %s\n' "$tr_state" "$trino_url"
 printf '  MiniSky (from VM) : %s\n' "${MINISKY_GUEST_ENDPOINT:-unknown}"
 printf '  Dashboard         : http://localhost:8081\n'
 printf '%s╰──────────────────────────────────────────────────────────────╯%s\n' "$C_BOLD" "$C_RESET"

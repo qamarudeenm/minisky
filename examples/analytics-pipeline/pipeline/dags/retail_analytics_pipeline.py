@@ -135,9 +135,12 @@ def retail_analytics_pipeline() -> None:
     @task
     def announce_raw_loaded(results: list[dict]) -> None:
         client = MiniSky.from_env()
+        # A mapped task's collected XComs arrive as a lazy sequence, which the
+        # JSON encoder cannot serialise — materialise it before it goes into a
+        # message body.
         client.publish(
             PUBSUB_TOPIC,
-            {"event": "raw.loaded", "tables": results},
+            {"event": "raw.loaded", "tables": list(results)},
             attributes={"stage": "raw", "pipeline": "retail_analytics"},
         )
 

@@ -5,6 +5,70 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-08-30
+
+1.4.0 made dbt able to *talk* to MiniSky. Actually running the pipeline in
+`examples/analytics-pipeline` end to end surfaced nine more defects, and this release closes all
+of them. Most were silent: `terraform apply` reported success every time while never converging,
+one was quietly destroying data on every run, and three of them together meant nothing running
+inside an emulated VM could reach the emulator at all.
+
+### Fixed
+- **Buckets were destroyed and recreated on every `terraform apply`**: the GCS emulator does not
+  model a bucket's location, labels or storage class — it accepts them on create and then reports
+  its own defaults. Since `location` is a ForceNew attribute in the Terraform provider, a bucket
+  created with `location = "US"` came back as `US-CENTRAL1` and was replaced on the next apply,
+  taking every object in it. The shim now records what the caller asked for and overlays it on the
+  emulator's responses, for both a single bucket and a bucket listing; buckets it has not seen pass
+  through untouched.
+- **Firewall rules never published a port**: two code paths decided whether a rule permits traffic
+  by reading `rule.Action == "allow"`, but a GCE firewall has no `action` field — allow versus deny
+  is expressed by which of `allowed` / `denied` is populated, and the ports live inside those
+  entries. The field was always empty, so no rule ever matched, every VM was provisioned with
+  `ports: 0`, and nothing running inside a VM was reachable from the host. This is the "Level 2
+  Firewall Port Binding" behaviour described in `docs/network-firewall.md`, which had never
+  actually worked. Port ranges are now expanded too, capped so a rule like `0-65535` cannot try to
+  bind every port on the host.
+- **VMs had no network route to the emulator**: compute containers were created without any
+  `ExtraHosts`, so from inside a VM the gateway was unreachable and `host.docker.internal` did not
+  resolve — on Docker Desktop the daemon runs in its own VM, so a container's bridge gateway is not
+  the host. Every VM is now created with `host.docker.internal:host-gateway`.
+- **Requests from anywhere but localhost were rejected**: path-based routing only applied when the
+  `Host` header contained `localhost` or `127.0.0.1`. A client inside a VM connects to
+  `host.docker.internal:8080`, matched neither, and got
+  `501 'host.docker.internal' is not yet implemented` for every call. Routing is now inverted: a
+  request whose Host names a Google API domain routes by domain, and everything else — every client
+  addressing the emulator directly — routes by URL prefix.
+- **`instances.insert` adopted a pre-existing container**: a `409 Conflict` from Docker was treated
+  as success and the existing container was started instead. Docker fixes a container's image and
+  port bindings at create time, so the VM came back with the wrong image and no published ports
+  while the API reported a fresh create. The conflicting container is now replaced.
+- **dbt could not materialise a single model**: every dbt materialisation emits BigQuery's
+  `OPTIONS(...)` clause, which DuckDB cannot parse — `dbt build` failed with
+  `Parser Error: syntax error at or near "OPTIONS"`. The clause is metadata only and is now
+  stripped from DDL before execution, with the parenthesis group matched by depth so nested parens
+  and parens inside string literals do not end it early.
+- **`terraform apply` never converged on BigQuery metadata**: `friendlyName` was not modelled on
+  datasets or tables, the dataset `PATCH` handler echoed the stored resource back without applying
+  the request, and tables answered `405` to `PATCH` (completing the support started in 1.2.1).
+- **`google_compute_network` never converged either**: the network resource did not report
+  `networkFirewallPolicyEnforcementOrder`, which GCE always sets, so every plan proposed the same
+  in-place update forever.
+- **Compute instances could not be updated, and lost their description**: the shim wrote its
+  internal container mapping into the instance's `description`, overwriting whatever the caller
+  set, and then answered `405` to the update Terraform issued to reconcile the drift it had itself
+  created. The mapping moved to a `minisky-container` label, a description is only synthesised when
+  the caller supplied none, and `instances.update` / `instances.patch` now apply description,
+  labels and metadata.
+
+### Verified
+- `examples/analytics-pipeline` now runs end to end against MiniSky: Terraform provisions the VPC,
+  firewall rules, three GCS buckets, three BigQuery datasets, a Pub/Sub topic and subscription and
+  the orchestrator VM, then installs Airflow and dbt onto the VM's OS. The DAG loads seed CSVs from
+  the emulated lake into BigQuery, dbt builds five models and runs 14 tests, the headline mart is
+  exported back to the curated bucket, and every stage announces itself on Pub/Sub.
+  `scripts/verify_infra.sh --data` reports **41 passed, 0 failed**.
+
 ## [1.4.0] - 2026-08-29
 
 A fidelity release aimed at one question: can you run a real analytics engineering pipeline —

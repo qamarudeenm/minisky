@@ -128,7 +128,122 @@ func translateBQtoDuckWithDatasets(bqSQL string, datasets map[string]bool) strin
 		log.Printf("[DuckDBBackend] WARN: SAFE_DIVIDE not auto-translated — consider rewriting query")
 	}
 
+	s = stripOptionsClauses(s)
+
 	return rewriteRelations(s, datasets)
+}
+
+// stripOptionsClauses removes BigQuery's OPTIONS(...) clause from DDL.
+//
+// Every dbt model materialisation emits one:
+//
+//	create or replace table `p`.`d`.`m` OPTIONS(description="", labels=[…]) as (select …)
+//
+// DuckDB has no such clause and fails the whole statement with
+// `Parser Error: syntax error at or near "OPTIONS"`, so no dbt model could be
+// built. The options are pure metadata, so dropping them preserves the result.
+//
+// Only DDL is touched, and only a top-level OPTIONS immediately followed by "(",
+// so a column or alias named "options" in a query is left alone.
+func stripOptionsClauses(sql string) string {
+	if !hasLeadingKeyword(sql, "CREATE", "ALTER", "DROP") {
+		return sql
+	}
+
+	var out strings.Builder
+	out.Grow(len(sql))
+
+	for i := 0; i < len(sql); {
+		// Copy string literals, quoted identifiers and comments verbatim.
+		if end, ok := skipOpaque(sql, i); ok {
+			out.WriteString(sql[i:end])
+			i = end
+			continue
+		}
+
+		if start, end, ok := optionsClauseAt(sql, i); ok {
+			// Leave a space so the tokens either side stay separated.
+			out.WriteByte(' ')
+			i = end
+			_ = start
+			continue
+		}
+
+		out.WriteByte(sql[i])
+		i++
+	}
+
+	return out.String()
+}
+
+// optionsClauseAt reports whether an OPTIONS(...) clause starts at i, returning
+// the offsets of the clause. The parenthesis group is matched with a depth
+// counter so nested parens and parens inside strings do not end it early.
+func optionsClauseAt(sql string, i int) (start, end int, ok bool) {
+	const keyword = "OPTIONS"
+	if i+len(keyword) > len(sql) || !strings.EqualFold(sql[i:i+len(keyword)], keyword) {
+		return 0, 0, false
+	}
+	// Must be a standalone word, not the tail of another identifier.
+	if i > 0 && isIdentChar(sql[i-1]) {
+		return 0, 0, false
+	}
+
+	j := i + len(keyword)
+	for j < len(sql) && (sql[j] == ' ' || sql[j] == '\t' || sql[j] == '\n' || sql[j] == '\r') {
+		j++
+	}
+	if j >= len(sql) || sql[j] != '(' {
+		return 0, 0, false
+	}
+
+	depth := 0
+	for j < len(sql) {
+		if skipEnd, opaque := skipOpaque(sql, j); opaque {
+			j = skipEnd
+			continue
+		}
+		switch sql[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i, j + 1, true
+			}
+		}
+		j++
+	}
+	// Unbalanced — leave the statement alone rather than truncating it.
+	return 0, 0, false
+}
+
+// hasLeadingKeyword reports whether the statement's first word is one of the
+// given keywords, skipping leading whitespace and comments.
+func hasLeadingKeyword(sql string, keywords ...string) bool {
+	i := 0
+	for i < len(sql) {
+		if end, ok := skipOpaque(sql, i); ok && end > i {
+			// Only comments may precede the first keyword; a leading string
+			// literal means this is not DDL.
+			if sql[i] == '-' || sql[i] == '/' {
+				i = end
+				continue
+			}
+			return false
+		}
+		if sql[i] == ' ' || sql[i] == '\t' || sql[i] == '\n' || sql[i] == '\r' || sql[i] == '(' {
+			i++
+			continue
+		}
+		break
+	}
+	for _, keyword := range keywords {
+		if i+len(keyword) <= len(sql) && strings.EqualFold(sql[i:i+len(keyword)], keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 // backtickChain matches a backtick-quoted identifier or identifier chain.
@@ -203,6 +318,29 @@ func rewriteRelations(sql string, datasets map[string]bool) string {
 // scanQuoted returns the index just past the closing quote of the literal
 // starting at i. Doubled quotes (” or "") and backslash escapes are consumed
 // as part of the literal.
+// skipOpaque reports whether a region the scanners must never rewrite starts at
+// i — a string literal, a quoted identifier, or a comment — and where it ends.
+func skipOpaque(sql string, i int) (end int, ok bool) {
+	if i >= len(sql) {
+		return i, false
+	}
+	switch c := sql[i]; {
+	case c == '\'' || c == '"' || c == '`':
+		return scanQuoted(sql, i), true
+	case c == '-' && i+1 < len(sql) && sql[i+1] == '-':
+		if nl := strings.IndexByte(sql[i:], '\n'); nl >= 0 {
+			return i + nl + 1, true
+		}
+		return len(sql), true
+	case c == '/' && i+1 < len(sql) && sql[i+1] == '*':
+		if close := strings.Index(sql[i+2:], "*/"); close >= 0 {
+			return i + 2 + close + 2, true
+		}
+		return len(sql), true
+	}
+	return i, false
+}
+
 func scanQuoted(sql string, i int) int {
 	quote := sql[i]
 	j := i + 1
