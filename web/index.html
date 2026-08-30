@@ -61,8 +61,8 @@
                 </div>
                 <div class="value-card">
                     <div class="icon-wrapper bg-yellow">🛠️</div>
-                    <h3>Project Discovery</h3>
-                    <p>New in v1.2.2: Native macOS Apple Silicon support and automatic detection of project contexts across all services. Your Terraform projects appear instantly in the dashboard.</p>
+                    <h3>Analytics Engineering</h3>
+                    <p>New in v1.4.1: run a full dbt + Airflow pipeline against emulated BigQuery, Cloud Storage and Pub/Sub &mdash; provisioned by Terraform, installed onto an emulated VM, with zero cloud spend.</p>
                 </div>
             </div>
         </div>
@@ -101,6 +101,7 @@
                 <h2 class="section-title">First-class Terraform support.</h2>
                 <p>MiniSky is the first emulator that treats Long-Running Operations (LRO) as first-class citizens. When you run <code>terraform apply</code>, your code natively polls transitions like <code>PROVISIONING</code> &rarr; <code>RUNNING</code> exactly like production.</p>
                 <p>Simply point the custom endpoint in your provider configuration to your local machine.</p>
+                <p>Want to see it carry real work? The <a href="https://github.com/qamarudeenm/minisky/tree/main/examples/analytics-pipeline" target="_blank">analytics pipeline example</a> provisions a VPC, buckets, BigQuery datasets, Pub/Sub and a VM, installs Airflow and dbt onto that VM, and runs the whole thing end to end &mdash; verified by 41 checks.</p>
             </div>
             <div class="install-code">
                 <div class="code-header">
@@ -240,7 +241,7 @@ minisky start</code></pre>
                         <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:13px;"><code>.\minisky.exe uninstall</code></pre>
                         <div style="margin-top:24px;">
                             <a id="windows-download-btn" href="https://github.com/qamarudeenm/minisky/releases/latest/download/minisky_windows_amd64.zip" class="btn btn-primary" style="display:inline-block;">⬇️ Download minisky.exe</a>
-                             <p style="font-size:12px; color:#777; margin-top:8px;">v1.2.2 · Windows 10/11 · 64-bit · No installer needed</p>
+                             <p style="font-size:12px; color:#777; margin-top:8px;">v1.4.1 · Windows 10/11 · 64-bit · No installer needed</p>
                         </div>
                         <hr style="margin:24px 0; border:none; border-top:1px solid #eee;">
                         <h4>Alternative: Scoop Package Manager</h4>
