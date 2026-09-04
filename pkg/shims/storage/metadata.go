@@ -2,8 +2,11 @@ package storage
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 	"sync"
+
+	"minisky/pkg/persist"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,14 +30,38 @@ type bucketAttrs struct {
 	Labels       map[string]string
 }
 
-// bucketRegistry stores per-bucket attributes for the lifetime of the process.
+// bucketRegistry stores the per-bucket attributes the emulator drops.
+//
+// It is persisted because losing it is destructive rather than merely
+// forgetful: the location reverts to the emulator's default, Terraform sees a
+// change on a ForceNew attribute, and the next apply destroys the bucket and
+// every object in it.
 type bucketRegistry struct {
 	mu      sync.RWMutex
 	buckets map[string]bucketAttrs
 }
 
+// stateName is the file under ~/.minisky this registry is kept in.
+const stateName = "storage_buckets"
+
 func newBucketRegistry() *bucketRegistry {
-	return &bucketRegistry{buckets: map[string]bucketAttrs{}}
+	r := &bucketRegistry{buckets: map[string]bucketAttrs{}}
+
+	var stored map[string]bucketAttrs
+	if err := persist.Load(stateName, &stored); err != nil {
+		log.Printf("[Storage] ignoring unreadable bucket metadata: %v", err)
+	} else if len(stored) > 0 {
+		r.buckets = stored
+		log.Printf("[Storage] restored metadata for %d bucket(s)", len(stored))
+	}
+	return r
+}
+
+// save writes the registry out. Callers hold the lock.
+func (r *bucketRegistry) save() {
+	if err := persist.Save(stateName, r.buckets); err != nil {
+		log.Printf("[Storage] could not persist bucket metadata: %v", err)
+	}
 }
 
 // record captures the attributes from a bucket insert/patch request body.
@@ -76,6 +103,7 @@ func (r *bucketRegistry) record(name string, body []byte) {
 		attrs.Labels = request.Labels
 	}
 	r.buckets[name] = attrs
+	r.save()
 }
 
 // forget drops a bucket's attributes once it is deleted.
@@ -83,6 +111,7 @@ func (r *bucketRegistry) forget(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.buckets, name)
+	r.save()
 }
 
 // lookup returns the recorded attributes for a bucket.

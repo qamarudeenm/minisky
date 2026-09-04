@@ -174,13 +174,15 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager) *API {
-	return &API{
+	api := &API{
 		opMgr:    opMgr,
 		backend:  NewDuckDBBackend(),
 		datasets: make(map[string]*Dataset),
 		tables:   make(map[string]*Table),
 		jobs:     make(map[string]*Job),
 	}
+	api.restore()
+	return api
 }
 
 // GetBackend exposes the backend for dynamic dashboard configuration.
@@ -304,6 +306,7 @@ func (api *API) routeDatasets(w http.ResponseWriter, r *http.Request, path strin
 		key := project + ":" + dsID
 		api.mu.Lock()
 		api.datasets[key] = ds
+		api.saveLocked()
 		api.mu.Unlock()
 
 		// The SQL translator needs the dataset name to tell `dataset.table`
@@ -374,6 +377,7 @@ func (api *API) routeDatasets(w http.ResponseWriter, r *http.Request, path strin
 			}
 			ds.LastModifiedTime = fmt.Sprintf("%d", time.Now().UnixMilli())
 			ds.Etag = newEtag()
+			api.saveLocked()
 		}
 		api.mu.Unlock()
 
@@ -391,6 +395,7 @@ func (api *API) routeDatasets(w http.ResponseWriter, r *http.Request, path strin
 		_, ok := api.datasets[key]
 		if ok {
 			delete(api.datasets, key)
+			api.saveLocked()
 		}
 		api.mu.Unlock()
 		if !ok {
@@ -452,6 +457,7 @@ func (api *API) routeTables(w http.ResponseWriter, r *http.Request, path string)
 		key := tableKey(project, datasetId, tID)
 		api.mu.Lock()
 		api.tables[key] = t
+		api.saveLocked()
 		api.mu.Unlock()
 
 		// Wire to DuckDB backend if enabled
@@ -524,6 +530,7 @@ func (api *API) routeTables(w http.ResponseWriter, r *http.Request, path string)
 			}
 			t.LastModifiedTime = fmt.Sprintf("%d", time.Now().UnixMilli())
 			t.Etag = newEtag()
+			api.saveLocked()
 		}
 		api.mu.Unlock()
 
@@ -546,6 +553,7 @@ func (api *API) routeTables(w http.ResponseWriter, r *http.Request, path string)
 		_, ok := api.tables[key]
 		if ok {
 			delete(api.tables, key)
+			api.saveLocked()
 		}
 		api.mu.Unlock()
 		if !ok {
@@ -592,6 +600,7 @@ func (api *API) insertAll(w http.ResponseWriter, r *http.Request, path string) {
 			t.rows = append(t.rows, row.Json)
 		}
 		t.NumRows = fmt.Sprintf("%d", len(t.rows))
+		api.saveLocked()
 	}
 	api.mu.Unlock()
 
@@ -833,6 +842,7 @@ func (api *API) reconcileTables(project string) {
 		}
 		log.Printf("[Shim: BigQuery] registered query-created table %s.%s", backendTable.Dataset, backendTable.Table)
 	}
+	api.saveLocked()
 }
 
 // routeQueries serves the official query surface:

@@ -81,11 +81,13 @@ type API struct {
 }
 
 func NewAPI() *API {
-	return &API{
+	api := &API{
 		serviceAccounts: make(map[string]*ServiceAccount),
 		keys:            make(map[string][]*ServiceAccountKey),
 		policies:        make(map[string]*IamPolicy),
 	}
+	api.restore()
+	return api
 }
 
 // ServeHTTP dispatches based on path structure.
@@ -194,6 +196,7 @@ func (api *API) createServiceAccount(w http.ResponseWriter, r *http.Request, pro
 	key := project + ":" + email
 	api.mu.Lock()
 	api.serviceAccounts[key] = sa
+	api.saveLocked()
 	api.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
@@ -240,6 +243,7 @@ func (api *API) deleteServiceAccount(w http.ResponseWriter, project, email strin
 	if ok {
 		delete(api.serviceAccounts, key)
 		delete(api.keys, key)
+		api.saveLocked()
 	}
 	api.mu.Unlock()
 
@@ -308,6 +312,7 @@ func (api *API) createKey(w http.ResponseWriter, project, email string) {
 
 	api.mu.Lock()
 	api.keys[saKey] = append(api.keys[saKey], key)
+	api.saveLocked()
 	api.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
@@ -351,6 +356,7 @@ func (api *API) setIamPolicy(w http.ResponseWriter, r *http.Request, resource st
 
 	api.mu.Lock()
 	api.policies[resource] = &policy
+	api.saveLocked()
 	api.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)

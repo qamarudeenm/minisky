@@ -35,6 +35,7 @@ func serve(t *testing.T, api *API, method, path, body string) (int, map[string]i
 // /queries and reads results back from /queries/{jobId}. Before this surface
 // existed both fell through to the 404 branch.
 func TestQuerySurface_PostAndGet(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil)
 
 	code, response := serve(t, api, http.MethodPost,
@@ -69,6 +70,7 @@ func TestQuerySurface_PostAndGet(t *testing.T) {
 }
 
 func TestQuerySurface_RejectsEmptyQuery(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil)
 	code, _ := serve(t, api, http.MethodPost, "/bigquery/v2/projects/demo/queries", `{}`)
 	if code != http.StatusBadRequest {
@@ -78,6 +80,7 @@ func TestQuerySurface_RejectsEmptyQuery(t *testing.T) {
 
 // The original /jobs/{jobId}/results path stays supported.
 func TestQuerySurface_LegacyJobResultsPathStillWorks(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil)
 
 	code, job := serve(t, api, http.MethodPost, "/bigquery/v2/projects/demo/jobs",
@@ -103,6 +106,7 @@ func TestQuerySurface_LegacyJobResultsPathStillWorks(t *testing.T) {
 // dataset.table references in later queries are indistinguishable from
 // alias.column and are left unresolved.
 func TestDatasetCreationRegistersNameWithTranslator(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil)
 
 	code, _ := serve(t, api, http.MethodPost, "/bigquery/v2/projects/demo/datasets",
@@ -121,6 +125,7 @@ func TestDatasetCreationRegistersNameWithTranslator(t *testing.T) {
 // resource back without applying the change, every subsequent plan proposes the
 // same update again and `terraform apply` never converges.
 func TestPatchAppliesDatasetMetadata(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil)
 
 	serve(t, api, http.MethodPost, "/bigquery/v2/projects/demo/datasets",
@@ -145,6 +150,7 @@ func TestPatchAppliesDatasetMetadata(t *testing.T) {
 }
 
 func TestPatchAppliesTableMetadata(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil)
 
 	serve(t, api, http.MethodPost, "/bigquery/v2/projects/demo/datasets",

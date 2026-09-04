@@ -230,7 +230,7 @@ type API struct {
 
 // NewAPI builds the Compute shim with the shared LRO manager and service manager.
 func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceManager) *API {
-	return &API{
+	api := &API{
 		opMgr:            opMgr,
 		svcMgr:           svcMgr,
 		instances:        make(map[string]*Instance),
@@ -238,6 +238,8 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 		securityPolicies: make(map[string]*SecurityPolicy),
 		firewalls:        make(map[string]*FirewallRule),
 	}
+	api.restore()
+	return api
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,6 +368,7 @@ func (api *API) updateInstance(w http.ResponseWriter, r *http.Request, project, 
 				inst.Metadata.Items = []MetadataItem{}
 			}
 		}
+		api.saveLocked()
 	}
 	api.mu.Unlock()
 
@@ -528,6 +531,7 @@ func (api *API) insertInstance(w http.ResponseWriter, r *http.Request, project, 
 	key := instanceKey(project, zone, name)
 	api.mu.Lock()
 	api.instances[key] = inst
+	api.saveLocked()
 	api.mu.Unlock()
 
 	// Register LRO
@@ -751,6 +755,7 @@ func (api *API) deleteInstance(w http.ResponseWriter, r *http.Request, project, 
 
 	// Mark as DELETING so the UI shows the "winding down" process
 	inst.Status = "DELETING"
+	api.saveLocked()
 	api.mu.Unlock()
 
 	containerName := fmt.Sprintf("minisky-vm-%s", name)
@@ -766,6 +771,7 @@ func (api *API) deleteInstance(w http.ResponseWriter, r *http.Request, project, 
 		// Finally remove from memory
 		api.mu.Lock()
 		delete(api.instances, key)
+		api.saveLocked()
 		api.mu.Unlock()
 		return nil
 	})
@@ -785,6 +791,7 @@ func (api *API) instanceAction(w http.ResponseWriter, r *http.Request, project, 
 		case "stop":
 			inst.Status = "TERMINATED"
 		}
+		api.saveLocked()
 	}
 	api.mu.Unlock()
 
@@ -989,6 +996,7 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 		key := project + ":" + body.Name
 		api.mu.Lock()
 		api.networks[key] = n
+		api.saveLocked()
 		api.mu.Unlock()
 
 		if body.Name != "default" {
@@ -1067,6 +1075,7 @@ func (api *API) routeNetworks(w http.ResponseWriter, r *http.Request, path strin
 		_, ok := api.networks[key]
 		if ok {
 			delete(api.networks, key)
+			api.saveLocked()
 		}
 		api.mu.Unlock()
 		if !ok {
@@ -1134,6 +1143,7 @@ func (api *API) routeSecurityPolicies(w http.ResponseWriter, r *http.Request, pa
 		key := project + ":" + body.Name
 		api.mu.Lock()
 		api.securityPolicies[key] = sp
+		api.saveLocked()
 		api.mu.Unlock()
 
 		op := api.opMgr.Register("compute#operation", "insert", sp.SelfLink, "", "")
@@ -1407,6 +1417,7 @@ func (api *API) createFirewall(w http.ResponseWriter, r *http.Request, project s
 	key := project + ":" + body.Name
 	api.mu.Lock()
 	api.firewalls[key] = &body
+	api.saveLocked()
 	api.mu.Unlock()
 
 	// Keyed by the short VPC name, not the full network URL — allowedPortsForVPC and
@@ -1516,6 +1527,7 @@ func (api *API) deleteFirewall(w http.ResponseWriter, project, name string) {
 	if ok {
 		networkURL = fw.Network
 		delete(api.firewalls, key)
+		api.saveLocked()
 	}
 	api.mu.Unlock()
 	if !ok {
