@@ -18,6 +18,14 @@ func init() {
 	registry.Register("dataproc.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("dataproc.googleapis.com",
+		"/v1/projects/*/regions/*/clusters",
+		"/v1/projects/*/regions/*/jobs",
+		"/v1/projects/*/regions/*/operations",
+	)
+
+	registry.RegisterOperationKinds("dataproc.googleapis.com", "dataproc#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,12 +133,14 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceManager) *API {
-	return &API{
+	api := &API{
 		opMgr:    opMgr,
 		svcMgr:   svcMgr,
 		clusters: make(map[string]*Cluster),
 		jobs:     make(map[string]*Job),
 	}
+	api.restore()
+	return api
 }
 
 // ServeHTTP dispatches Dataproc v1 paths.
@@ -146,6 +156,8 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 //	GET    /v1/projects/{project}/regions/{region}/jobs/{jobId}
 //	GET    /v1/projects/{project}/regions/{region}/operations/{operation}
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Dataproc] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 

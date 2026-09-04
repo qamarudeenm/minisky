@@ -5,6 +5,79 @@ All notable changes to the MiniSky project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-09-04
+
+Two things made this release. A user asked whether Cloud Resource Manager was available (issue #7),
+which turned into an audit of what the gateway could actually reach: only 5 of 23 finished shims
+were reachable by URL, the rest answering `501` to every client that was not addressing them by
+hostname. And probing that work turned up a restart bug that destroyed data — a bucket came back in
+the emulator's default location, and since `location` is ForceNew, the next `terraform apply`
+deleted the bucket with every object in it.
+
+### Added
+- **Cloud Resource Manager (v1 and v3)**: organizations, folders and projects, with nesting up to
+  ten levels, move, delete, undelete and search, plus IAM bindings at every level. Both API
+  generations are served at once, since they differ in field names and parent shapes and clients
+  pick either. The hierarchy is persisted, so a landing zone applied from Terraform survives a
+  restart. Cloud Billing is emulated alongside it because `google_project` reads billing on every
+  refresh.
+- **`minisky iam explain`**: answers whether a principal has a permission on a resource and says
+  why — which binding granted it, and at which level of the hierarchy it was inherited from. Backed
+  by a curated catalogue of 52 roles and 139 permissions, extensible with `~/.minisky/roles.json`.
+  IAM is analysed, not enforced: the emulator will not stop a call, but it will tell you what a
+  policy actually grants.
+- **Resource hierarchy in the dashboard**: create, move and delete folders and projects, and
+  inspect access, without leaving the UI.
+- **Cloud Tasks queue settings**: rate limits, retry policy, App Engine routing override and
+  logging config are modelled, with `queues.patch`, `pause`, `resume` and `purge`. A paused queue
+  holds its tasks rather than only reporting a state.
+
+### Fixed
+- **A restart destroyed Cloud Storage buckets and their objects**: MiniSky removes its emulator
+  containers on shutdown, and fake-gcs-server had no volume, so everything written to it was lost.
+  Storage now keeps its data in a named Docker volume. The bucket metadata registry added in 1.4.0
+  is persisted too — without it a bucket reverted to `US-CENTRAL1` on restart and Terraform replaced
+  it, which is the same data loss by a different route.
+- **Resource state did not survive a restart**: eighteen shims held their resources for the lifetime
+  of the process, so a restart made the emulator contradict what it had just said, and
+  `terraform plan` reads a contradiction as drift. All of them now reload on start. Three lose more
+  than a record: a Cloud KMS key ring takes every ciphertext written under it, a secret's payload
+  exists nowhere else, and a scheduler job restored without its cron entry reads back as `ENABLED`
+  while never firing again — so KMS persists its key material, Secret Manager its payloads, and the
+  scheduler re-arms the cron on load. Compute reconciles instance status against Docker rather than
+  replaying it, and re-registers firewall rules with the enforcement registry, which starts empty.
+- **Only 5 of 23 services were reachable through the gateway**: the router matched on prefixes,
+  which cannot work when the segment identifying a service sits after a variable one — thirteen
+  services share `/v1/projects/`. Each shim now declares its own URL patterns and the router orders
+  them by specificity, so `/v1/projects/*/topics` and `/v1/projects/*/secrets` reach different
+  services. Operation polls are attributed by the operation's recorded kind rather than by pattern,
+  because `/v1/projects/*/locations/*/operations/*` belongs to five services at once and real GCP
+  separates them by hostname.
+- **App Engine could not be read or created**: `GET /v1/apps/{id}` fell through to a blanket 404
+  because the dispatch matched only a path ending in `/apps`, and `apps.create` answered 200 with an
+  empty body while creating nothing.
+- **The Vertex AI generative endpoint was unroutable**: the shim translates `generateContent` to a
+  local LLM provider — Ollama or any OpenAI-compatible endpoint, set from the dashboard — but the
+  path carries a `publishers` segment that no route matched.
+- **Cloud Scheduler jobs could not be read back**: a job created with the full resource name in the
+  body, which is what `google_cloud_scheduler_job` sends, was stored under that name while every
+  lookup built one from the URL, complete with leading slash and version segment. Both shapes are
+  now reduced to the canonical name.
+- **Cloud Tasks queues outside us-central1 were unreachable**: `queues.get` did not exist, and every
+  other lookup built the queue's name with the location hardcoded, so a queue in any other region
+  could be created and then never read, listed or deleted.
+- **A service was declared ready before it could serve**: readiness was a TCP connect, but Docker
+  binds a published port before the process inside is listening, so the first request after a cold
+  start could fail. Readiness now requires an HTTP response, with a TCP fallback for emulators that
+  speak no HTTP.
+- **The version was a literal in three files**: it is now taken from the git tag at build time, so
+  `minisky version`, the dashboard and the release artefacts cannot disagree.
+
+### Note for macOS users
+The darwin build still ships without CGO, so BigQuery falls back to a mock that returns zero rows
+for every query rather than erroring. Everything else on darwin is unaffected. Building from source
+with `CGO_ENABLED=1 go build ./cmd/minisky` gives full DuckDB-backed BigQuery on macOS today.
+
 ## [1.4.2] - 2026-08-30
 
 ### Fixed

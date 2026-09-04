@@ -30,6 +30,7 @@ func jsonResp(status int, body string) (*http.Response, error) {
 }
 
 func TestExtractNameFromURL(t *testing.T) {
+	isolate(t)
 	tests := []struct {
 		in   string
 		want string
@@ -46,6 +47,7 @@ func TestExtractNameFromURL(t *testing.T) {
 }
 
 func TestDockerNetworkNameForVPC(t *testing.T) {
+	isolate(t)
 	tests := []struct {
 		vpcName string
 		want    string
@@ -62,6 +64,7 @@ func TestDockerNetworkNameForVPC(t *testing.T) {
 }
 
 func TestGetAllowedPortsForVPC(t *testing.T) {
+	isolate(t)
 	api := NewAPI(nil, nil)
 	api.firewalls["p:allow-default"] = &FirewallRule{
 		Network:   "https://www.googleapis.com/compute/v1/projects/p/global/networks/default",
@@ -107,6 +110,7 @@ func equalSet(got, want []string) bool {
 }
 
 func TestPatchNetworkIPs_PerInterfaceOnItsOwnNetwork(t *testing.T) {
+	isolate(t)
 	ft := &fakeTransport{handler: func(req *http.Request) (*http.Response, error) {
 		return jsonResp(http.StatusOK, `{"NetworkSettings":{"Networks":{
 			"minisky-net": {"IPAddress": "172.18.0.2"},
@@ -134,6 +138,7 @@ func TestPatchNetworkIPs_PerInterfaceOnItsOwnNetwork(t *testing.T) {
 }
 
 func TestReapplyFirewallToVPC_MatchesSecondaryNIC(t *testing.T) {
+	isolate(t)
 	var calls []string
 	ft := &fakeTransport{handler: func(req *http.Request) (*http.Response, error) {
 		calls = append(calls, req.Method+" "+req.URL.Path)
@@ -171,6 +176,7 @@ func TestReapplyFirewallToVPC_MatchesSecondaryNIC(t *testing.T) {
 }
 
 func TestPatchNetworkIPs_FallsBackWhenNetworkMissing(t *testing.T) {
+	isolate(t)
 	ft := &fakeTransport{handler: func(req *http.Request) (*http.Response, error) {
 		return jsonResp(http.StatusOK, `{"NetworkSettings":{"Networks":{}}}`)
 	}}
@@ -191,6 +197,7 @@ func TestPatchNetworkIPs_FallsBackWhenNetworkMissing(t *testing.T) {
 }
 
 func TestGetInstance_SubnetworkBackfilledForEveryInterface(t *testing.T) {
+	isolate(t)
 	ft := &fakeTransport{handler: func(req *http.Request) (*http.Response, error) {
 		return jsonResp(http.StatusOK, `{"NetworkSettings":{"Networks":{
 			"minisky-net": {"IPAddress": "172.18.0.2"},
@@ -225,6 +232,7 @@ func TestGetInstance_SubnetworkBackfilledForEveryInterface(t *testing.T) {
 }
 
 func TestDuplicateNetworkInterfaceVPC(t *testing.T) {
+	isolate(t)
 	tests := []struct {
 		name   string
 		ifaces []NetworkInterface
@@ -265,6 +273,7 @@ func TestDuplicateNetworkInterfaceVPC(t *testing.T) {
 }
 
 func TestInsertInstance_RejectsDuplicateNetworkInterfaceVPC(t *testing.T) {
+	isolate(t)
 	// Real GCE rejects instances.insert outright when two network interfaces
 	// reference the same VPC network — it never silently attaches only one.
 	api := NewAPI(orchestrator.NewOperationManager(), orchestrator.NewServiceManagerForTesting(&fakeTransport{
@@ -293,6 +302,7 @@ func TestInsertInstance_RejectsDuplicateNetworkInterfaceVPC(t *testing.T) {
 }
 
 func TestCreateFirewall_RegistersRuleUnderShortVPCName(t *testing.T) {
+	isolate(t)
 	// createFirewall stores the rule keyed by the full network URL in
 	// api.firewalls (fine, getAllowedPortsForVPC extracts the short name at read
 	// time there), but it must register with the orchestrator under the short VPC
@@ -321,6 +331,7 @@ func TestCreateFirewall_RegistersRuleUnderShortVPCName(t *testing.T) {
 }
 
 func TestResolveOsImage(t *testing.T) {
+	isolate(t)
 	tests := map[string]string{
 		"projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts": "ubuntu:24.04",
 		"ubuntu-2404-lts": "ubuntu:24.04",
@@ -338,6 +349,7 @@ func TestResolveOsImage(t *testing.T) {
 }
 
 func TestInsertInstanceUsesInitializeParamsImage(t *testing.T) {
+	isolate(t)
 	// boot_disk.initialize_params.image is how Terraform asks for an OS; before
 	// initializeParams was modelled the request decoded to an empty disk and
 	// every VM silently booted the default image.
@@ -360,6 +372,7 @@ func TestInsertInstanceUsesInitializeParamsImage(t *testing.T) {
 // shim omitted it, terraform proposed the same in-place update on every plan and
 // the configuration never converged.
 func TestNetworkReportsFirewallPolicyEnforcementOrder(t *testing.T) {
+	isolate(t)
 	var network Network
 	raw := `{"kind":"compute#network","name":"vpc","networkFirewallPolicyEnforcementOrder":"BEFORE_CLASSIC_FIREWALL"}`
 	if err := json.Unmarshal([]byte(raw), &network); err != nil {
@@ -385,6 +398,7 @@ func TestNetworkReportsFirewallPolicyEnforcementOrder(t *testing.T) {
 // Description, overwriting whatever the caller set. Terraform then saw drift on
 // every plan and could not fix it, because instances answered 405 to updates.
 func TestSetContainerMappingPreservesDescription(t *testing.T) {
+	isolate(t)
 	instance := &Instance{Description: "Airflow + dbt host"}
 	instance.setContainerMapping("minisky-vm-orchestrator")
 
@@ -397,6 +411,7 @@ func TestSetContainerMappingPreservesDescription(t *testing.T) {
 }
 
 func TestSetContainerMappingFillsAnEmptyDescription(t *testing.T) {
+	isolate(t)
 	instance := &Instance{}
 	instance.setContainerMapping("minisky-vm-orchestrator")
 
@@ -407,6 +422,7 @@ func TestSetContainerMappingFillsAnEmptyDescription(t *testing.T) {
 }
 
 func TestUpdateInstanceAppliesMutableFields(t *testing.T) {
+	isolate(t)
 	api := NewAPI(orchestrator.NewOperationManager(), nil)
 	key := instanceKey("demo", "us-central1-a", "vm")
 	api.instances[key] = &Instance{
@@ -441,6 +457,7 @@ func TestUpdateInstanceAppliesMutableFields(t *testing.T) {
 // allowedPortsForVPC never matched a rule and no VM was ever given a published
 // host port — services inside an emulated VM were unreachable from the host.
 func TestFirewallEffectReadsAllowedEntries(t *testing.T) {
+	isolate(t)
 	rule := &FirewallRule{
 		Direction: "INGRESS",
 		Allowed:   []FirewallAllow{{IPProtocol: "tcp", Ports: []string{"8080", "8090"}}},
@@ -459,6 +476,7 @@ func TestFirewallEffectReadsAllowedEntries(t *testing.T) {
 }
 
 func TestFirewallEffectReadsDeniedEntries(t *testing.T) {
+	isolate(t)
 	rule := &FirewallRule{
 		Direction: "INGRESS",
 		Denied:    []FirewallAllow{{IPProtocol: "tcp", Ports: []string{"22"}}},
@@ -473,6 +491,7 @@ func TestFirewallEffectReadsDeniedEntries(t *testing.T) {
 }
 
 func TestExpandPortRange(t *testing.T) {
+	isolate(t)
 	if got := expandPortRange("8080"); len(got) != 1 || got[0] != "8080" {
 		t.Errorf("single port = %v", got)
 	}
@@ -493,6 +512,7 @@ func TestExpandPortRange(t *testing.T) {
 // then ask for the ports a VM on that network should publish. This is the path
 // insertInstance takes, and it used to return nothing.
 func TestGetAllowedPortsForVPCReadsCreatedRules(t *testing.T) {
+	isolate(t)
 	api := NewAPI(orchestrator.NewOperationManager(), orchestrator.NewServiceManagerForTesting(&fakeTransport{}))
 
 	body := `{"name":"allow-airflow","network":"https://www.googleapis.com/compute/v1/projects/demo/global/networks/analytics-vpc",` +
@@ -517,6 +537,7 @@ func TestGetAllowedPortsForVPCReadsCreatedRules(t *testing.T) {
 }
 
 func TestGetAllowedPortsForVPCIgnoresDeniedAndDisabled(t *testing.T) {
+	isolate(t)
 	api := NewAPI(orchestrator.NewOperationManager(), orchestrator.NewServiceManagerForTesting(&fakeTransport{}))
 	network := "https://www.googleapis.com/compute/v1/projects/demo/global/networks/vpc"
 

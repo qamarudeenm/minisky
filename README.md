@@ -15,9 +15,10 @@ MiniSky provides a seamless, professional-grade development environment that emu
 
 ## ✨ Features
 
-- **🚀 29+ GCP Services**: Support for Compute Engine, GKE, Bigtable, Pub/Sub, Storage, Cloud SQL, Vertex AI, Artifact Registry, and more.
+- **🚀 29+ GCP Services**: Compute Engine, GKE, Cloud SQL, BigQuery, Storage, Pub/Sub, IAM, Secret Manager, Cloud KMS, Artifact Registry, Bigtable, Vertex AI and more.
 - **🖥️ Embedded Dashboard**: Real-time observability and resource management via a premium web UI.
-- **🛠️ Terraform Ready**: First-class support for the official Google Cloud Terraform provider via custom endpoint routing.
+- **🛠️ Works With Your Existing Tools**: Terraform, `gcloud` and the Google client libraries all reach it by changing an endpoint — see [Point Your Tools At It](#-point-your-tools-at-it).
+- **🧠 Vertex AI On Local Models**: `generateContent` is answered by a local LLM — Ollama by default, and configurable — so GenAI code paths run offline with no key and no spend.
 - **🔌 Dynamic Registry**: Modular plugin system for community-led service contributions.
 - **📦 Single Binary**: Developed entirely in Go. A single, ultra-lightweight binary where all services are lazy-loaded for maximum efficiency and sub-100ms startup times.
 
@@ -94,6 +95,113 @@ scoop update minisky
 ```
 
 
+## 🔌 Point Your Tools At It
+
+MiniSky serves the Google Cloud REST APIs on a single gateway and works out which service a
+request belongs to from its URL. The standard tools therefore work unmodified — you change the
+endpoint, not the code.
+
+### Terraform
+
+Override the endpoints in the provider block. Full guide: **[Terraform Integration](docs/terraform.md)**.
+
+```hcl
+provider "google" {
+  project      = "local-dev-project"
+  access_token = "minisky-local-token"   # any non-empty string is accepted
+
+  compute_custom_endpoint   = "http://localhost:8080/compute/v1/"
+  storage_custom_endpoint   = "http://localhost:8080/storage/v1/"
+  big_query_custom_endpoint = "http://localhost:8080/bigquery/v2/"
+  pubsub_custom_endpoint    = "http://localhost:8080/"
+}
+```
+
+### gcloud
+
+Point the CLI at the gateway and turn credentials off — MiniSky does not authenticate callers.
+
+```bash
+export CLOUDSDK_AUTH_DISABLE_CREDENTIALS=true
+export CLOUDSDK_CORE_PROJECT=local-dev-project
+
+export CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE=http://localhost:8080/compute/v1/
+export CLOUDSDK_API_ENDPOINT_OVERRIDES_SECRETMANAGER=http://localhost:8080/
+
+gcloud compute networks create my-vpc --subnet-mode=auto
+gcloud secrets create db-password --replication-policy=automatic
+gcloud secrets list
+```
+
+The variable is `CLOUDSDK_API_ENDPOINT_OVERRIDES_<SERVICE>`. The URL keeps whatever version prefix
+that API puts in its paths — `/compute/v1/`, `/storage/v1/`, `/bigquery/v2/` — and is the bare
+gateway for services whose paths already begin with the version, such as Secret Manager and IAM
+(`/v1/projects/...`).
+
+### Client libraries
+
+The Google client libraries take an endpoint the same way. Several read an emulator host straight
+from the environment:
+
+```bash
+export STORAGE_EMULATOR_HOST=http://localhost:8080
+export PUBSUB_EMULATOR_HOST=localhost:8080
+export BIGQUERY_EMULATOR_HOST=http://localhost:8080
+export FIRESTORE_EMULATOR_HOST=localhost:8080
+```
+
+For the rest, pass the endpoint explicitly and use anonymous credentials, since there is no real
+identity to exchange:
+
+```python
+from google.cloud import secretmanager
+from google.api_core.client_options import ClientOptions
+from google.auth.credentials import AnonymousCredentials
+
+client = secretmanager.SecretManagerServiceClient(
+    client_options=ClientOptions(api_endpoint="http://localhost:8080"),
+    credentials=AnonymousCredentials(),
+)
+```
+
+A worked end-to-end example — Terraform, Airflow and dbt against the emulator — lives in
+[`examples/analytics-pipeline`](examples/analytics-pipeline).
+
+## 🧱 What Happens When You Create A Resource
+
+Not every resource becomes a container. MiniSky backs them three different ways, which is worth
+knowing when you are judging what a local run actually proves.
+
+| Backing | What it is | Services |
+| :--- | :--- | :--- |
+| **State only** | In-process objects served as REST. No container. | IAM, DNS, Secret Manager, Cloud KMS, Monitoring, VPC and firewall metadata |
+| **Vendor emulator** | A real emulator in Docker, proxied through the gateway. | Cloud Storage, Pub/Sub, Firestore, Datastore, Spanner, Bigtable |
+| **Real workload** | An actual container doing actual work. | Compute VMs, Cloud SQL (real Postgres/MySQL), GKE (via kind), Cloud Run and Functions |
+
+So a `google_compute_instance` becomes a container named `minisky-vm-<name>` you can
+`docker exec` into, while a firewall rule or a secret is state and nothing more. BigQuery is the
+exception that proves the rule: state, but executed against an embedded DuckDB.
+
+## 🧠 Vertex AI Without A Cloud Key
+
+Calls to the Vertex AI generative endpoint are translated to a local model provider and back, so
+application code keeps using Google's request and response shapes.
+
+```bash
+# Point it at a model you have pulled (defaults to Ollama on :11434)
+curl -X POST http://localhost:8080/v1/internal/config \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"ollama","endpoint":"http://localhost:11434","model":"llama3.1:8b"}'
+
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"contents":[{"role":"user","parts":[{"text":"Summarise this release"}]}]}' \
+  "http://localhost:8080/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent"
+```
+
+The response comes back as a normal `GenerateContentResponse`, so swapping the endpoint back to
+Google is the only change needed to run the same code against a real model. Provider and model are
+set from the dashboard or the config endpoint above.
+
 ## 🖥️ Platform Compatibility
 
 MiniSky is cross-platform. All core GCP services work on every platform. BigQuery SQL execution uses an embedded [DuckDB](https://duckdb.org) engine which requires CGO — platforms where CGO is not available fall back to an in-memory mock that returns valid empty responses.
@@ -151,8 +259,16 @@ Windows builds use `CGO_ENABLED=0` for maximum portability (no MSVC/mingw depend
 
 ## 📖 Documentation
 
+- [User Guide](docs/user-guide.md) — day-to-day usage
 - [CLI Reference](docs/cli_reference.md)
 - [Terraform Guide](docs/terraform.md)
+- [Architecture](docs/architecture.md) — how the gateway, shims and orchestrator fit together
+- [Service Catalog](docs/service-catalog.md) — what each service emulates
+- [Networking & Firewall](docs/network-firewall.md) — VPC isolation and how firewall rules become published ports
+- [Storage Event Triggers](docs/event_triggers.md)
+- [Image Management](docs/images_management.md) — which images back each service
+- [Adding a Service](docs/adding-a-service.md) — build and register a new shim
+- [Analytics Pipeline Example](examples/analytics-pipeline) — Terraform + Airflow + dbt, end to end
 - [Changelog](CHANGELOG.md)
 - [Contributor Guide](CONTRIBUTING.md)
 

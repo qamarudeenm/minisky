@@ -124,3 +124,47 @@ func TestBucketPathDetection(t *testing.T) {
 		t.Errorf("the bucket collection has no name, got %q", got)
 	}
 }
+
+// Losing this registry is destructive, not merely forgetful: the location
+// reverts to the emulator's default, Terraform sees a change on a ForceNew
+// attribute, and the next apply destroys the bucket with every object in it.
+func TestRegistrySurvivesARestart(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	first := newBucketRegistry()
+	first.record("", []byte(`{"name":"retail-raw","location":"US","labels":{"zone":"raw"}}`))
+
+	// A second registry over the same home is what a daemon restart looks like.
+	restarted := newBucketRegistry()
+
+	var bucket map[string]interface{}
+	body := restarted.overlay([]byte(`{"kind":"storage#bucket","name":"retail-raw","location":"US-CENTRAL1"}`))
+	if err := json.Unmarshal(body, &bucket); err != nil {
+		t.Fatalf("overlay produced invalid JSON: %v", err)
+	}
+
+	if bucket["location"] != "US" {
+		t.Errorf("location = %v after restart, want US — the bucket would be destroyed on the next apply",
+			bucket["location"])
+	}
+	labels, ok := bucket["labels"].(map[string]interface{})
+	if !ok || labels["zone"] != "raw" {
+		t.Errorf("labels = %v after restart, want zone=raw", bucket["labels"])
+	}
+}
+
+func TestForgottenBucketStaysForgotten(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	first := newBucketRegistry()
+	first.record("", []byte(`{"name":"temporary","location":"EU"}`))
+	first.forget("temporary")
+
+	if _, ok := newBucketRegistry().lookup("temporary"); ok {
+		t.Error("a deleted bucket came back after the restart")
+	}
+}

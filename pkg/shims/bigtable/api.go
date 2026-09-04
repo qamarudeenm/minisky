@@ -25,6 +25,10 @@ func init() {
 	}
 	registry.Register("bigtableadmin.googleapis.com", f)
 	registry.Register("bigtable.googleapis.com", f)
+
+	registry.RegisterRoutes("bigtableadmin.googleapis.com",
+		"/v2/projects/*/instances",
+	)
 }
 
 // Instance mirrors the Bigtable Instance resource.
@@ -62,15 +66,19 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceManager) *API {
-	return &API{
+	api := &API{
 		opMgr:     opMgr,
 		svcMgr:    svcMgr,
 		instances: make(map[string]*Instance),
 		tables:    make(map[string]*Table),
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Bigtable] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 

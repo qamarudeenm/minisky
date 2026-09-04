@@ -19,6 +19,12 @@ func init() {
 	registry.Register("storage.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("storage.googleapis.com",
+		"/storage/v1",
+		"/upload/storage/v1",
+		"/batch/storage/v1",
+	)
 }
 
 // EventObserver is implemented by shims that want to receive GCS events (like Serverless).

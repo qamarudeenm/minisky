@@ -20,6 +20,12 @@ func init() {
 			repos:  make(map[string]*Repository),
 		}
 	})
+
+	registry.RegisterRoutes("artifactregistry.googleapis.com",
+		"/v1/projects/*/locations/*/repositories",
+	)
+
+	registry.RegisterOperationKinds("artifactregistry.googleapis.com", "artifactregistry#operation")
 }
 
 type Repository struct {
@@ -52,14 +58,18 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManager) *API {
-	return &API{
+	api := &API{
 		opMgr:  opMgr,
 		svcMgr: sm,
 		repos:  make(map[string]*Repository),
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	path := r.URL.Path
 	// v1/projects/{project}/locations/{location}/repositories
 	if strings.Contains(path, "/repositories") {

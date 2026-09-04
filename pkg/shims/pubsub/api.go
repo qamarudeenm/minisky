@@ -18,6 +18,17 @@ func init() {
 	registry.Register("pubsub.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("pubsub.googleapis.com",
+		"/v1/projects/*/topics",
+		"/v1/projects/*/subscriptions",
+		"/v1/projects/*/snapshots",
+		"/v1/projects/*/schemas",
+		"/projects/*/topics",
+		"/projects/*/subscriptions",
+		"/projects/*/snapshots",
+		"/projects/*/schemas",
+	)
 }
 
 type EventObserver interface {

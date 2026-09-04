@@ -513,6 +513,42 @@ func (sm *ServiceManager) Teardown(ctx context.Context) {
 	log.Printf("[Orchestrator] Removed network '%s'", networkName)
 }
 
+// RemoveDataVolumes deletes the named volumes holding emulator data.
+//
+// Teardown deliberately leaves them alone — it runs on every shutdown, and the
+// whole point of the volumes is to outlive the containers it removes. Only
+// uninstall, which is asking to remove everything, calls this.
+func (sm *ServiceManager) RemoveDataVolumes(ctx context.Context) {
+	reg := config.GetImageRegistry()
+	for _, cfg := range reg.Emulators {
+		name, ok := namedVolume(cfg.Volume)
+		if !ok {
+			continue
+		}
+		url := "http://localhost/volumes/" + name
+		req, _ := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+		if _, err := sm.dockerClient.Do(req); err != nil {
+			log.Printf("[Orchestrator] Could not remove volume '%s': %v", name, err)
+			continue
+		}
+		log.Printf("[Orchestrator] Removed volume '%s'", name)
+	}
+}
+
+// namedVolume returns the volume name when a configured volume refers to a
+// Docker-managed volume rather than a host path.
+func namedVolume(volume string) (string, bool) {
+	lastColon := strings.LastIndex(volume, ":")
+	if lastColon <= 0 {
+		return "", false
+	}
+	source := volume[:lastColon]
+	if strings.ContainsAny(source, `/\`) || source == "." || source == ".." {
+		return "", false
+	}
+	return source, true
+}
+
 // PruneExitedContainers removes all containers that are not running.
 func (sm *ServiceManager) PruneExitedContainers(ctx context.Context) error {
 	resp, err := sm.dockerClient.Get("http://localhost/containers/json?all=true&filters={\"status\":[\"exited\",\"created\",\"dead\"]}")
@@ -1199,6 +1235,40 @@ func (sm *ServiceManager) RunCommandInContainer(name string, cmd []string) (stri
 	return result.String(), nil
 }
 
+// resolveBind turns a configured volume into a Docker bind specification.
+//
+// A host path is resolved under ~/.minisky rather than the process working
+// directory. Resolving against the working directory made an emulator's data
+// live wherever the daemon happened to be started from, so the same install
+// saw different data depending on which shell launched it — and the directory
+// it wrote to was usually the user's current project.
+//
+// The directory is created here rather than left to Docker, which would create
+// a missing bind source owned by root inside the user's home.
+//
+// A source with no path separator is a named Docker volume and is passed
+// through untouched.
+func resolveBind(volume string) (string, error) {
+	lastColon := strings.LastIndex(volume, ":")
+	if lastColon <= 0 {
+		return "", fmt.Errorf("volume %q is not in source:target form", volume)
+	}
+	source, target := volume[:lastColon], volume[lastColon+1:]
+
+	// Docker creates and manages a named volume itself.
+	if _, named := namedVolume(volume); named {
+		return volume, nil
+	}
+
+	if !filepath.IsAbs(source) {
+		source = filepath.Join(config.GetMiniskyDir(), source)
+	}
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		return "", fmt.Errorf("create %s: %w", source, err)
+	}
+	return source + ":" + target, nil
+}
+
 func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 	// Bind container port to a random localhost port — works with Docker Desktop
 	// (which runs in a VM where internal bridge IPs aren't host-reachable).
@@ -1211,20 +1281,11 @@ func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 		},
 	}
 	if c.Volume != "" {
-		vol := c.Volume
-		lastColon := strings.LastIndex(vol, ":")
-		if lastColon > 0 {
-			hostPath := vol[:lastColon]
-			containerPath := vol[lastColon+1:]
-			if strings.ContainsAny(hostPath, `/\`) || hostPath == "." || hostPath == ".." {
-				if !filepath.IsAbs(hostPath) {
-					if abs, err := filepath.Abs(hostPath); err == nil {
-						vol = abs + ":" + containerPath
-					}
-				}
-			}
+		if bind, err := resolveBind(c.Volume); err != nil {
+			log.Printf("[Orchestrator] WARNING: %s will not persist: %v", c.Name, err)
+		} else {
+			hostCfg["Binds"] = []string{bind}
 		}
-		hostCfg["Binds"] = []string{vol}
 	}
 
 	payload := map[string]interface{}{
@@ -1265,17 +1326,61 @@ func (sm *ServiceManager) startContainer(name string) error {
 	return nil
 }
 
+// tcpOnlyReadinessGrace is how long the probe insists on an application-level
+// response before it settles for an open socket. It covers backends that speak
+// only gRPC and will never answer an HTTP/1.1 request, without masking the much
+// commoner case of an HTTP emulator that simply has not finished booting.
+const tcpOnlyReadinessGrace = 20 * time.Second
+
+// waitUntilReady blocks until the emulator at addr is actually serving.
+//
+// A TCP dial alone cannot tell: addr is a published container port, and Docker
+// binds it the moment the container starts, well before the process inside is
+// listening. The dial therefore succeeded instantly on a cold start, the
+// service was declared ONLINE, and the first request through the proxy died
+// with "EOF" — twice in a row, in practice, until the emulator caught up.
+//
+// So the socket only gets us to the door: readiness means an HTTP response
+// came back. Any status counts, including 404 — the point is that something
+// on the other end parsed a request and answered it.
 func (sm *ServiceManager) waitUntilReady(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	graceEnds := time.Now().Add(tcpOnlyReadinessGrace)
+
+	probe := &http.Client{
+		Timeout: 2 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	var lastErr error
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err != nil {
+			lastErr = err
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		conn.Close()
+
+		resp, err := probe.Get("http://" + addr + "/")
 		if err == nil {
-			conn.Close()
+			resp.Body.Close()
+			return nil
+		}
+		lastErr = err
+
+		// A gRPC-only emulator never answers this, so accept the open socket
+		// once the grace period has passed rather than failing the cold start.
+		if time.Now().After(graceEnds) {
+			log.Printf("[Orchestrator] '%s' accepted connections but never answered HTTP; "+
+				"treating the open socket as ready (%v)", addr, err)
 			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return fmt.Errorf("'%s' not reachable after %s", addr, timeout)
+	return fmt.Errorf("'%s' not serving after %s: %v", addr, timeout, lastErr)
 }
 
 // resolveDockerSocket and dialDocker are implemented in OS-specific files (dialer_unix.go, dialer_windows.go)

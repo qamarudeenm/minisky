@@ -13,12 +13,14 @@ import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import SecurityIcon from '@mui/icons-material/Security';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import Dashboard from './components/Dashboard';
 import StoragePage from './components/StoragePage';
 import ComputePage from './components/ComputePage';
 import DatabasePage from './components/DatabasePage';
 import NetworkPage from './components/NetworkPage';
 import ProjectSelector from './components/ProjectSelector';
+import ResourceManagerPage from './components/ResourceManagerPage';
 import LogExplorer from './components/LogExplorer';
 import MonitoringPage from './components/MonitoringPage';
 import FirebasePage from './components/FirebasePage';
@@ -65,12 +67,15 @@ function NavigationContent() {
   const { pathname } = useLocation();
   const isLogging = pathname === '/logging';
   const isMonitoring = pathname === '/monitoring';
-  const [version, setVersion] = useState('...');
+  const isHierarchy = pathname === '/resource-manager';
+  const [versionLabel, setVersionLabel] = useState('...');
 
   useEffect(() => {
     fetch('/api/system/info')
       .then(res => res.json())
-      .then(data => setVersion(data.version))
+      // A local build reports no real version, so name it rather than
+      // rendering "MiniSky vdev".
+      .then(data => setVersionLabel(data.isRelease ? `v${data.version}` : 'dev build'))
       .catch(err => console.error('Failed to fetch version:', err));
   }, []);
 
@@ -88,7 +93,7 @@ function NavigationContent() {
         <Box sx={{ p: 4, display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid #dadce0' }}>
           <img src="/minisky_logo.png" alt="MiniSky Logo" style={{ width: 36, height: 36, objectFit: 'contain' }} />
           <Typography variant="h6" sx={{ letterSpacing: '0.01em', fontWeight: 500, color: '#3c4043' }}>
-            MiniSky v{version}
+            MiniSky {versionLabel}
           </Typography>
         </Box>
 
@@ -101,6 +106,25 @@ function NavigationContent() {
           <Typography variant="caption" sx={{ px: 1, color: '#9aa0a6', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '0.65rem' }}>
             Operations
           </Typography>
+
+          {/* Resource Manager */}
+          <ListItemButton
+            component={Link}
+            to="/resource-manager"
+            sx={{
+              borderRadius: '8px', mt: 1,
+              backgroundColor: isHierarchy ? '#e8f0fe' : 'transparent',
+              '&:hover': { backgroundColor: isHierarchy ? '#e8f0fe' : '#f1f3f4' }
+            }}
+          >
+            <ListItemIcon sx={{ color: isHierarchy ? '#1a73e8' : '#5f6368', minWidth: 40 }}>
+              <AccountTreeIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary="Resource Manager"
+              sx={{ color: isHierarchy ? '#1a73e8' : '#3c4043', '& span': { fontWeight: isHierarchy ? 500 : 400 } }}
+            />
+          </ListItemButton>
 
           {/* Cloud Logging */}
           <ListItemButton
@@ -163,6 +187,7 @@ function NavigationContent() {
           <Route path="/security"  element={<SecurityPage />} />
           <Route path="/memorystore" element={<MemorystorePage />} />
           <Route path="/tasks" element={<TasksAndSchedulingPage />} />
+          <Route path="/resource-manager" element={<ResourceManagerPage />} />
         </Routes>
       </Box>
     </Box>

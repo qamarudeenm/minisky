@@ -30,6 +30,19 @@ func init() {
 	}
 	registry.Register("cloudfunctions.googleapis.com", f)
 	registry.Register("run.googleapis.com", f)
+
+	registry.RegisterRoutes("cloudfunctions.googleapis.com",
+		"/v2/projects/*/locations/*/functions",
+	)
+	registry.RegisterRoutes("run.googleapis.com",
+		"/v2/projects/*/locations/*/services",
+		"/v2/projects/*/locations/*/jobs",
+		"/v2/projects/*/locations/*/operations",
+		"/apis/serving.knative.dev",
+	)
+
+	registry.RegisterOperationKinds("cloudfunctions.googleapis.com", "cloudfunctions#operation")
+	registry.RegisterOperationKinds("run.googleapis.com", "run#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,7 +204,7 @@ func (api *API) OnPostBoot(ctx *registry.Context) {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManager, logger *logging.API) *API {
-	return &API{
+	api := &API{
 		opMgr:     opMgr,
 		svcMgr:    sm,
 		logger:    logger,
@@ -199,6 +212,8 @@ func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManage
 		functions: make(map[string]*Function),
 		services:  make(map[string]*Service),
 	}
+	api.restore()
+	return api
 }
 
 // GetBackend exposes the backend for dynamic dashboard configuration.
@@ -236,6 +251,8 @@ func (api *API) HandleEvent(eventType, resource, payload string) {
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Serverless] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -336,7 +353,7 @@ func (api *API) createFunction(w http.ResponseWriter, r *http.Request, project, 
 	api.mu.Unlock()
 
 	op := api.opMgr.Register("cloudfunctions#operation", "CREATE", fullName, "", location)
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		// 1. Build Image
 		image := "gcr.io/google.com/cloudsdktool/cloud-sdk:latest" // fallback
 		var err error
@@ -445,7 +462,7 @@ func (api *API) deleteFunction(w http.ResponseWriter, r *http.Request, project, 
 	}
 	fullName := fmt.Sprintf("projects/%s/locations/%s/functions/%s", project, location, name)
 	op := api.opMgr.Register("cloudfunctions#operation", "DELETE", fullName, "", location)
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		api.svcMgr.DeleteComputeVM("minisky-serverless-" + sanitizeImageName(name))
 		return nil
 	})
@@ -522,7 +539,7 @@ func (api *API) createService(w http.ResponseWriter, r *http.Request, project, l
 	api.mu.Unlock()
 
 	op := api.opMgr.Register("run#operation", "CREATE", fullName, "", location)
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		// 1. Build Image
 		image := "gcr.io/google.com/cloudsdktool/cloud-sdk:latest" // fallback
 		if body.Template != nil && len(body.Template.Containers) > 0 {
@@ -622,7 +639,7 @@ func (api *API) deleteService(w http.ResponseWriter, r *http.Request, project, l
 	}
 	fullName := fmt.Sprintf("projects/%s/locations/%s/services/%s", project, location, name)
 	op := api.opMgr.Register("run#operation", "DELETE", fullName, "", location)
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		api.svcMgr.DeleteComputeVM("minisky-serverless-" + sanitizeImageName(name))
 		return nil
 	})
@@ -680,7 +697,7 @@ func (api *API) deployResource(w http.ResponseWriter, r *http.Request) { log.Pri
 	}
 	api.mu.Unlock()
 
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		// 1. Create source directory
 		tmpDir, err := os.MkdirTemp("", "minisky-deploy-*")
 		if err != nil {

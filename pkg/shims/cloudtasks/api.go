@@ -3,6 +3,7 @@ package cloudtasks
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -17,6 +18,10 @@ func init() {
 	registry.Register("cloudtasks.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI()
 	})
+
+	registry.RegisterRoutes("cloudtasks.googleapis.com",
+		"/v2/projects/*/locations/*/queues",
+	)
 }
 
 type Task struct {
@@ -34,9 +39,100 @@ type HTTPRequest struct {
 	Body       string            `json:"body,omitempty"` // Base64
 }
 
+// RateLimits caps how fast a queue dispatches.
+type RateLimits struct {
+	MaxDispatchesPerSecond  float64 `json:"maxDispatchesPerSecond,omitempty"`
+	MaxBurstSize            int     `json:"maxBurstSize,omitempty"`
+	MaxConcurrentDispatches int     `json:"maxConcurrentDispatches,omitempty"`
+}
+
+// RetryConfig describes what happens to a task that fails.
+type RetryConfig struct {
+	MaxAttempts      int    `json:"maxAttempts,omitempty"`
+	MaxRetryDuration string `json:"maxRetryDuration,omitempty"`
+	MinBackoff       string `json:"minBackoff,omitempty"`
+	MaxBackoff       string `json:"maxBackoff,omitempty"`
+	MaxDoublings     int    `json:"maxDoublings,omitempty"`
+}
+
+// AppEngineRouting overrides where a queue's App Engine tasks are sent.
+type AppEngineRouting struct {
+	Service  string `json:"service,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Instance string `json:"instance,omitempty"`
+	Host     string `json:"host,omitempty"`
+}
+
+// StackdriverLoggingConfig sets what fraction of operations are logged.
+type StackdriverLoggingConfig struct {
+	SamplingRatio float64 `json:"samplingRatio"`
+}
+
 type Queue struct {
-	Name  string `json:"name"`
-	State string `json:"state"`
+	Name                     string                    `json:"name"`
+	State                    string                    `json:"state"`
+	RateLimits               *RateLimits               `json:"rateLimits,omitempty"`
+	RetryConfig              *RetryConfig              `json:"retryConfig,omitempty"`
+	AppEngineRoutingOverride *AppEngineRouting         `json:"appEngineRoutingOverride,omitempty"`
+	StackdriverLoggingConfig *StackdriverLoggingConfig `json:"stackdriverLoggingConfig,omitempty"`
+	PurgeTime                string                    `json:"purgeTime,omitempty"`
+}
+
+// Google's defaults for the fields a caller leaves unset. They matter because
+// Terraform reads every one of them back as a computed value: a queue that
+// reports nothing where the API would report 500 dispatches per second is drift
+// the provider proposes to fix on every plan and never can.
+const (
+	defaultDispatchesPerSecond  = 500
+	defaultBurstSize            = 100
+	defaultConcurrentDispatches = 1000
+	defaultMaxAttempts          = 100
+	defaultMaxRetryDuration     = "0s"
+	defaultMinBackoff           = "0.100s"
+	defaultMaxBackoff           = "3600s"
+	defaultMaxDoublings         = 16
+)
+
+// applyQueueDefaults fills in every value the caller left unset.
+//
+// It runs after a create and after a patch, because a patch replaces a whole
+// group: a caller who sends retryConfig with only maxAttempts gets Google's
+// defaults for the rest, which is what the real API does.
+func applyQueueDefaults(q *Queue) {
+	if q.State == "" {
+		q.State = "RUNNING"
+	}
+	if q.RateLimits == nil {
+		q.RateLimits = &RateLimits{}
+	}
+	if q.RateLimits.MaxDispatchesPerSecond == 0 {
+		q.RateLimits.MaxDispatchesPerSecond = defaultDispatchesPerSecond
+	}
+	if q.RateLimits.MaxBurstSize == 0 {
+		q.RateLimits.MaxBurstSize = defaultBurstSize
+	}
+	if q.RateLimits.MaxConcurrentDispatches == 0 {
+		q.RateLimits.MaxConcurrentDispatches = defaultConcurrentDispatches
+	}
+
+	if q.RetryConfig == nil {
+		q.RetryConfig = &RetryConfig{}
+	}
+	if q.RetryConfig.MaxAttempts == 0 {
+		q.RetryConfig.MaxAttempts = defaultMaxAttempts
+	}
+	if q.RetryConfig.MaxRetryDuration == "" {
+		q.RetryConfig.MaxRetryDuration = defaultMaxRetryDuration
+	}
+	if q.RetryConfig.MinBackoff == "" {
+		q.RetryConfig.MinBackoff = defaultMinBackoff
+	}
+	if q.RetryConfig.MaxBackoff == "" {
+		q.RetryConfig.MaxBackoff = defaultMaxBackoff
+	}
+	if q.RetryConfig.MaxDoublings == 0 {
+		q.RetryConfig.MaxDoublings = defaultMaxDoublings
+	}
 }
 
 type API struct {
@@ -47,10 +143,12 @@ type API struct {
 }
 
 func NewAPI() *API {
-	return &API{
+	api := &API{
 		queues: make(map[string]*Queue),
 		tasks:  make(map[string][]*Task),
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) OnPostBoot(ctx *registry.Context) {
@@ -67,6 +165,8 @@ func (api *API) pushLog(projectId, severity, resourceName, text string) {
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 
 	path := strings.Trim(r.URL.Path, "/")
 	parts := strings.Split(path, "/")
@@ -87,15 +187,18 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle REST API
 	// v2/projects/{project}/locations/{location}/queues
 	if len(parts) >= 6 && parts[0] == "v2" && parts[3] == "locations" && parts[5] == "queues" {
-		queueId := ""
+		location := parts[4]
+		queueId, verb := "", ""
 		if len(parts) >= 7 {
-			queueId = parts[6]
+			// A custom method arrives attached to the queue id, as
+			// ".../queues/emails:pause".
+			queueId, verb, _ = strings.Cut(parts[6], ":")
 		}
 
 		switch {
 		case len(parts) == 6:
 			if r.Method == http.MethodGet {
-				api.listQueues(w, r, project)
+				api.listQueues(w, r, project, location)
 				return
 			}
 			if r.Method == http.MethodPost {
@@ -103,23 +206,49 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case len(parts) == 7:
+			if verb != "" {
+				if r.Method != http.MethodPost {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				switch verb {
+				case "pause":
+					api.setQueueState(w, project, location, queueId, "PAUSED")
+					return
+				case "resume":
+					api.setQueueState(w, project, location, queueId, "RUNNING")
+					return
+				case "purge":
+					api.purgeQueue(w, project, location, queueId)
+					return
+				}
+				break
+			}
+			if r.Method == http.MethodGet {
+				api.getQueue(w, project, location, queueId)
+				return
+			}
+			if r.Method == http.MethodPatch {
+				api.patchQueue(w, r, project, location, queueId)
+				return
+			}
 			if r.Method == http.MethodDelete {
-				api.deleteQueue(w, r, project, queueId)
+				api.deleteQueue(w, r, project, location, queueId)
 				return
 			}
 		case len(parts) >= 8 && parts[7] == "tasks":
 			if len(parts) == 8 {
 				if r.Method == http.MethodGet {
-					api.listTasks(w, r, project, queueId)
+					api.listTasks(w, r, project, location, queueId)
 					return
 				}
 				if r.Method == http.MethodPost {
-					api.createTask(w, r, project, queueId)
+					api.createTask(w, r, project, location, queueId)
 					return
 				}
 			} else if len(parts) == 9 {
 				if r.Method == http.MethodDelete {
-					api.deleteTask(w, r, project, queueId, parts[8])
+					api.deleteTask(w, r, project, location, queueId, parts[8])
 					return
 				}
 			}
@@ -130,12 +259,38 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 }
 
-func (api *API) listQueues(w http.ResponseWriter, r *http.Request, project string) {
+// queueName is the canonical resource name of a queue. Every lookup used to
+// build this with the location hardcoded to us-central1 while createQueue keyed
+// by the name the client sent, so a queue in any other region could be created
+// and then never read, listed or deleted.
+func queueName(project, location, queueId string) string {
+	return fmt.Sprintf("projects/%s/locations/%s/queues/%s", project, location, queueId)
+}
+
+// getQueue serves queues.get, which is how a client — Terraform included —
+// reads a queue back after creating it.
+func (api *API) getQueue(w http.ResponseWriter, project, location, queueId string) {
+	name := queueName(project, location, queueId)
+
+	api.mu.RLock()
+	q, ok := api.queues[name]
+	api.mu.RUnlock()
+
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"code":404,"message":"Queue does not exist."}}`))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(q)
+}
+
+func (api *API) listQueues(w http.ResponseWriter, r *http.Request, project, location string) {
 	api.mu.RLock()
 	defer api.mu.RUnlock()
 
 	var result []*Queue
-	prefix := fmt.Sprintf("projects/%s/locations/us-central1/queues/", project)
+	prefix := fmt.Sprintf("projects/%s/locations/%s/queues/", project, location)
 	for name, q := range api.queues {
 		if strings.HasPrefix(name, prefix) {
 			result = append(result, q)
@@ -160,6 +315,7 @@ func (api *API) createQueue(w http.ResponseWriter, r *http.Request, project stri
 		return
 	}
 	q.State = "RUNNING"
+	applyQueueDefaults(&q)
 	api.queues[q.Name] = &q
 	api.mu.Unlock()
 
@@ -168,8 +324,128 @@ func (api *API) createQueue(w http.ResponseWriter, r *http.Request, project stri
 	json.NewEncoder(w).Encode(q)
 }
 
-func (api *API) deleteQueue(w http.ResponseWriter, r *http.Request, project, queueId string) {
-	name := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
+// patchQueue serves queues.patch, which is how a settings change reaches the
+// API. Like the real one it creates the queue when it does not exist.
+//
+// updateMask is honoured at the level of the top-level group: a mask naming a
+// single leaf replaces the group that leaf belongs to. That is the same result
+// whenever the caller sends the whole group, which every generated client does,
+// and an omitted leaf then takes Google's default — as it does on the real API,
+// where a patched group is replaced rather than merged.
+func (api *API) patchQueue(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
+	var body Queue
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	name := queueName(project, location, queueId)
+	masked := maskedGroups(r.URL.Query().Get("updateMask"))
+
+	api.mu.Lock()
+	q, existing := api.queues[name]
+	if !existing {
+		q = &Queue{Name: name}
+		api.queues[name] = q
+	}
+
+	if masked("rateLimits") {
+		q.RateLimits = body.RateLimits
+	}
+	if masked("retryConfig") {
+		q.RetryConfig = body.RetryConfig
+	}
+	if masked("appEngineRoutingOverride") {
+		q.AppEngineRoutingOverride = body.AppEngineRoutingOverride
+	}
+	if masked("stackdriverLoggingConfig") {
+		q.StackdriverLoggingConfig = body.StackdriverLoggingConfig
+	}
+	applyQueueDefaults(q)
+	updated := *q
+	api.mu.Unlock()
+
+	action := "Updated queue"
+	if !existing {
+		action = "Created queue by patch"
+	}
+	api.pushLog(project, "INFO", name, action)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(updated)
+}
+
+// maskedGroups returns a predicate for whether a top-level field group is in
+// the update mask. An empty mask means every group the body carries.
+func maskedGroups(mask string) func(string) bool {
+	if strings.TrimSpace(mask) == "" {
+		return func(string) bool { return true }
+	}
+	groups := map[string]bool{}
+	for _, path := range strings.Split(mask, ",") {
+		path = strings.TrimSpace(path)
+		if group, _, found := strings.Cut(path, "."); found {
+			groups[group] = true
+		} else if path != "" {
+			groups[path] = true
+		}
+	}
+	return func(group string) bool { return groups[group] }
+}
+
+// setQueueState serves queues.pause and queues.resume.
+func (api *API) setQueueState(w http.ResponseWriter, project, location, queueId, state string) {
+	name := queueName(project, location, queueId)
+
+	api.mu.Lock()
+	q, ok := api.queues[name]
+	if ok {
+		q.State = state
+	}
+	var updated Queue
+	if ok {
+		updated = *q
+	}
+	api.mu.Unlock()
+
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"code":404,"message":"Queue does not exist."}}`))
+		return
+	}
+	api.pushLog(project, "INFO", name, "Queue state set to "+state)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(updated)
+}
+
+// purgeQueue serves queues.purge: it drops the queue's tasks and leaves the
+// queue itself in place.
+func (api *API) purgeQueue(w http.ResponseWriter, project, location, queueId string) {
+	name := queueName(project, location, queueId)
+
+	api.mu.Lock()
+	q, ok := api.queues[name]
+	if ok {
+		delete(api.tasks, name)
+		q.PurgeTime = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	var updated Queue
+	if ok {
+		updated = *q
+	}
+	api.mu.Unlock()
+
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"code":404,"message":"Queue does not exist."}}`))
+		return
+	}
+	api.pushLog(project, "INFO", name, "Purged queue")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(updated)
+}
+
+func (api *API) deleteQueue(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
+	name := queueName(project, location, queueId)
 	log.Printf("[Shim: Cloud Tasks] Attempting to delete queue: %s", name)
 	
 	api.mu.Lock()
@@ -186,8 +462,8 @@ func (api *API) deleteQueue(w http.ResponseWriter, r *http.Request, project, que
 	w.WriteHeader(http.StatusOK)
 }
 
-func (api *API) listTasks(w http.ResponseWriter, r *http.Request, project, queueId string) {
-	name := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
+func (api *API) listTasks(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
+	name := queueName(project, location, queueId)
 	
 	api.mu.RLock()
 	tasks := api.tasks[name]
@@ -199,7 +475,7 @@ func (api *API) listTasks(w http.ResponseWriter, r *http.Request, project, queue
 	json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks})
 }
 
-func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, queueId string) {
+func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
 	var body struct {
 		Task *Task `json:"task"`
 	}
@@ -208,8 +484,8 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, queu
 		return
 	}
 
-	queueName := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
-	
+	queue := queueName(project, location, queueId)
+
 	task := body.Task
 	if task == nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -217,20 +493,24 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, queu
 	}
 
 	if task.Name == "" {
-		task.Name = fmt.Sprintf("%s/tasks/%d", queueName, time.Now().UnixNano())
+		task.Name = fmt.Sprintf("%s/tasks/%d", queue, time.Now().UnixNano())
 	}
 	task.CreateTime = time.Now().Format(time.RFC3339)
 	task.Status = "PENDING"
 
 	api.mu.Lock()
-	api.tasks[queueName] = append(api.tasks[queueName], task)
+	api.tasks[queue] = append(api.tasks[queue], task)
+	q, known := api.queues[queue]
+	paused := known && q.State == "PAUSED"
 	api.mu.Unlock()
 
-	api.pushLog(project, "INFO", queueName, "Task created: "+task.Name)
-	
-	// Background: Simulate task execution if it's an HTTP task
-	if task.HTTPRequest != nil {
-		go api.executeTask(project, queueName, task)
+	api.pushLog(project, "INFO", queue, "Task created: "+task.Name)
+
+	// Background: Simulate task execution if it's an HTTP task. A paused queue
+	// accepts tasks and holds them — dispatching from one would make pause a
+	// label rather than a state.
+	if task.HTTPRequest != nil && !paused {
+		go api.executeTask(project, queue, task)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -258,20 +538,20 @@ func (api *API) executeTask(project, queueName string, task *Task) {
 	api.mu.Unlock()
 }
 
-func (api *API) deleteTask(w http.ResponseWriter, r *http.Request, project, queueId, taskId string) {
-	queueName := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
-	taskName := fmt.Sprintf("%s/tasks/%s", queueName, taskId)
+func (api *API) deleteTask(w http.ResponseWriter, r *http.Request, project, location, queueId, taskId string) {
+	queue := queueName(project, location, queueId)
+	taskName := fmt.Sprintf("%s/tasks/%s", queue, taskId)
 	log.Printf("[Shim: Cloud Tasks] Attempting to delete task: %s", taskName)
 
 	api.mu.Lock()
 	defer api.mu.Unlock()
 
-	tasks := api.tasks[queueName]
+	tasks := api.tasks[queue]
 	for i, t := range tasks {
 		if t.Name == taskName {
-			api.tasks[queueName] = append(tasks[:i], tasks[i+1:]...)
+			api.tasks[queue] = append(tasks[:i], tasks[i+1:]...)
 			log.Printf("[Shim: Cloud Tasks] Successfully deleted task: %s", taskName)
-			api.pushLog(project, "INFO", queueName, "Task deleted: "+taskName)
+			api.pushLog(project, "INFO", queue, "Task deleted: "+taskName)
 			w.WriteHeader(http.StatusOK)
 			return
 		}

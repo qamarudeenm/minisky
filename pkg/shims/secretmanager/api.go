@@ -18,6 +18,11 @@ func init() {
 	registry.Register("secretmanager.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.SvcMgr, nil)
 	})
+
+	registry.RegisterRoutes("secretmanager.googleapis.com",
+		"/v1/projects/*/secrets",
+		"/v1beta1/projects/*/secrets",
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -54,11 +59,13 @@ type API struct {
 }
 
 func NewAPI(sm *orchestrator.ServiceManager, logAPI *logging.API) *API {
-	return &API{
+	api := &API{
 		store:  make(map[string]map[string]*secret),
 		svcMgr: sm,
 		logAPI: logAPI,
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) OnPostBoot(ctx *registry.Context) {
@@ -94,6 +101,8 @@ func jsonError(w http.ResponseWriter, code int, msg string) {
 // ---------------------------------------------------------------------------
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Secret Manager] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 

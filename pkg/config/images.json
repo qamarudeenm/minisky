@@ -4,7 +4,8 @@
       "name": "minisky-gcs",
       "image": "fsouza/fake-gcs-server:latest",
       "port": "4443/tcp",
-      "cmd": ["-scheme", "http"]
+      "cmd": ["-scheme", "http"],
+      "volume": "minisky-storage:/storage"
     },
     "pubsub.googleapis.com": {
       "name": "minisky-pubsub",
@@ -29,7 +30,7 @@
       "image": "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators",
       "port": "8081/tcp",
       "cmd": ["gcloud", "beta", "emulators", "datastore", "start", "--host-port=0.0.0.0:8081", "--data-dir=/data", "--project=minisky-project"],
-      "volume": "./data/datastore:/data"
+      "volume": "minisky-datastore:/data"
     },
     "spanner.googleapis.com": {
       "name": "minisky-spanner",

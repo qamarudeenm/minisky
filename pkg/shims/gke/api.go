@@ -17,6 +17,18 @@ func init() {
 	registry.Register("container.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr)
 	})
+
+	registry.RegisterRoutes("container.googleapis.com",
+		"/v1/projects/*/locations/*/clusters",
+		"/v1/projects/*/zones/*/clusters",
+		// Only the zonal operations path is GKE's alone. The regional one,
+		// /v1/projects/*/locations/*/operations, is shared with several other
+		// APIs and is resolved by operation id instead — see
+		// registry.RegisterOperationKinds below.
+		"/v1/projects/*/zones/*/operations",
+	)
+
+	registry.RegisterOperationKinds("container.googleapis.com", "container#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,11 +100,13 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager) *API {
-	return &API{
+	api := &API{
 		opMgr:    opMgr,
 		backend:  NewKindBackend(),
 		clusters: make(map[string]*Cluster),
 	}
+	api.restore()
+	return api
 }
 
 // GetBackend exposes the backend for dynamic dashboard configuration.
@@ -110,6 +124,8 @@ func (api *API) GetBackend() *KindBackend {
 //   GET    /v1/projects/{project}/zones/{zone}/operations/{operation}
 //   (location-based paths /v1/projects/{project}/locations/{zone}/... also handled)
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: GKE] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -220,7 +236,7 @@ func (api *API) createCluster(w http.ResponseWriter, r *http.Request, project, z
 	targetLink := cl.SelfLink
 	op := api.opMgr.Register("container#operation", "CREATE_CLUSTER", targetLink, zone, "")
 
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		if api.backend.Enabled() {
 			api.backend.CreateCluster(name)
 		} else {
@@ -327,7 +343,7 @@ func (api *API) deleteCluster(w http.ResponseWriter, r *http.Request, project, z
 	api.mu.Unlock()
 
 	op := api.opMgr.Register("container#operation", "DELETE_CLUSTER", cl.SelfLink, zone, "")
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		// Simulate winding down time
 		time.Sleep(3 * time.Second)
 

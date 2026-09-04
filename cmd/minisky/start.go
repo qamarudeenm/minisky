@@ -11,10 +11,10 @@ import (
 	"syscall"
 
 	"minisky/pkg/config"
+	"minisky/pkg/dashboard"
 	"minisky/pkg/orchestrator"
 	"minisky/pkg/registry"
 	"minisky/pkg/router"
-	"minisky/pkg/dashboard"
 	_ "minisky/pkg/shims" // Triggers all shim registrations
 	"minisky/pkg/shims/appengine"
 	"minisky/pkg/shims/bigquery"
@@ -85,12 +85,16 @@ var startCmd = &cobra.Command{
 		// ── Router ──────────────────────────────────────────────────────────
 		// ── Router ──────────────────────────────────────────────────────────
 		proxyRouter := router.NewProxyRouterWithManager(svcMgr)
+		// Lets the router attribute an operation poll to the service that
+		// minted it, which is the only way to tell apart the operations paths
+		// that several regional APIs share.
+		proxyRouter.SetOperationManager(opMgr)
 
 		// ── Dynamic Registry Boot ──────────────────────────────────────────
 		// This replaces the long list of manual RegisterShim calls.
 		// All shims that are imported (using _ below) will self-register.
 		shims, lazyDomains := registry.BootAll(opMgr, svcMgr)
-		
+
 		for domain, handler := range shims {
 			proxyRouter.RegisterShim(domain, handler)
 		}
@@ -124,9 +128,9 @@ var startCmd = &cobra.Command{
 		go func() {
 			addr := ":" + uiPort
 			log.Printf("✨ MiniSky Dashboard available at http://localhost:%s", uiPort)
-			
+
 			uiMux := http.NewServeMux()
-			
+
 			// REST API for dynamic dashboard control
 			apiHandler := dashboard.NewAPIHandler(
 				svcMgr,
@@ -143,7 +147,7 @@ var startCmd = &cobra.Command{
 			uiMux.Handle("/api/", apiHandler)
 			// Fallback to static dist
 			uiMux.Handle("/", ui.Handler())
-			
+
 			if err := http.ListenAndServe(addr, uiMux); err != nil {
 				log.Fatalf("UI Server crashed: %v", err)
 			}

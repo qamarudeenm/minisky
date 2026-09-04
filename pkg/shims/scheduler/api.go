@@ -23,6 +23,10 @@ func init() {
 		}
 		return NewAPI(logAPI)
 	})
+
+	registry.RegisterRoutes("cloudscheduler.googleapis.com",
+		"/v1/projects/*/locations/*/jobs",
+	)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +95,7 @@ func NewAPI(logAPI *logging.API) *API {
 		logAPI:  logAPI,
 	}
 	api.cron.Start()
+	api.restore()
 	return api
 }
 
@@ -102,6 +107,8 @@ func (api *API) pushLog(projectId, severity, jobId, text string) {
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Cloud Scheduler] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -110,13 +117,13 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Job verbs (run, pause, resume)
 	switch {
 	case strings.HasSuffix(path, ":run"):
-		api.runJob(w, r, strings.TrimSuffix(path, ":run"))
+		api.runJob(w, r, canonicalJobName(strings.TrimSuffix(path, ":run")))
 		return
 	case strings.HasSuffix(path, ":pause"):
-		api.pauseJob(w, r, strings.TrimSuffix(path, ":pause"))
+		api.pauseJob(w, r, canonicalJobName(strings.TrimSuffix(path, ":pause")))
 		return
 	case strings.HasSuffix(path, ":resume"):
-		api.resumeJob(w, r, strings.TrimSuffix(path, ":resume"))
+		api.resumeJob(w, r, canonicalJobName(strings.TrimSuffix(path, ":resume")))
 		return
 	}
 
@@ -129,7 +136,7 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) routeJobs(w http.ResponseWriter, r *http.Request, path string) {
-	jobName := extractJobName(path)
+	jobName := jobNameFromPath(path)
 
 	switch r.Method {
 	case http.MethodPost:
@@ -154,10 +161,12 @@ func (api *API) createJob(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 
-	// In GCP, Name is usually provided in the body or generated
-	// If it's a relative path, we prefix it
-	if !strings.HasPrefix(job.Name, "projects/") {
-		job.Name = strings.TrimSuffix(path, "/") + "/" + job.Name
+	// The body carries either the full resource name or a bare job id; both
+	// have to end up under the same canonical name.
+	if strings.Contains(job.Name, "projects/") {
+		job.Name = canonicalJobName(job.Name)
+	} else {
+		job.Name = canonicalJobName(path) + "/" + strings.Trim(job.Name, "/")
 	}
 
 	job.State = "ENABLED"
@@ -187,7 +196,7 @@ func (api *API) getJob(w http.ResponseWriter, name string) {
 }
 
 func (api *API) listJobs(w http.ResponseWriter, r *http.Request, path string) {
-	prefix := strings.TrimSuffix(path, "/jobs") + "/jobs/"
+	prefix := canonicalJobName(path) + "/"
 	api.mu.RLock()
 	var items []*Job
 	for k, v := range api.jobs {
@@ -372,12 +381,29 @@ func (api *API) executeAppEngine(target *AppEngineTarget) error {
 	return nil
 }
 
-func extractJobName(path string) string {
-	parts := strings.Split(path, "/jobs/")
-	if len(parts) > 1 {
-		return parts[0] + "/jobs/" + parts[1]
+// canonicalJobName reduces a name to the form GCP uses,
+// "projects/{p}/locations/{l}/jobs/{j}".
+//
+// A name reaches this shim in two shapes. Clients that send the full resource
+// name in a create body — Terraform's google_cloud_scheduler_job among them —
+// send it already canonical. Everything derived from the request path carries a
+// leading slash and a version segment. Storing one shape and looking up by the
+// other meant a job created with a full name could never be read, paused or
+// deleted afterwards.
+func canonicalJobName(name string) string {
+	if idx := strings.Index(name, "projects/"); idx >= 0 {
+		return strings.Trim(name[idx:], "/")
 	}
-	return ""
+	return strings.Trim(name, "/")
+}
+
+// jobNameFromPath returns the canonical name of the job a path addresses, or ""
+// when the path addresses the collection rather than one job.
+func jobNameFromPath(path string) string {
+	if !strings.Contains(path, "/jobs/") {
+		return ""
+	}
+	return canonicalJobName(path)
 }
 
 func extractProject(path string) string {

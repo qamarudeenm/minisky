@@ -11,6 +11,7 @@ import (
 	_ "minisky/pkg/shims/cloudsql"
 	_ "minisky/pkg/shims/cloudkms"
 	_ "minisky/pkg/shims/cloudtasks"
+	_ "minisky/pkg/shims/cloudbilling"
 	_ "minisky/pkg/shims/cloudbuild"
 	_ "minisky/pkg/shims/compute"
 	_ "minisky/pkg/shims/dataproc"
@@ -25,6 +26,7 @@ import (
 	_ "minisky/pkg/shims/metadata"
 	_ "minisky/pkg/shims/monitoring"
 	_ "minisky/pkg/shims/pubsub"
+	_ "minisky/pkg/shims/resourcemanager"
 	_ "minisky/pkg/shims/scheduler"
 	_ "minisky/pkg/shims/secretmanager"
 	_ "minisky/pkg/shims/serverless"
@@ -37,4 +39,31 @@ func init() {
 	registry.RegisterLazyDocker("firestore.googleapis.com")
 	registry.RegisterLazyDocker("datastore.googleapis.com")
 	registry.RegisterLazyDocker("spanner.googleapis.com")
+
+	// Docker-backed services declare their routes here rather than in a shim
+	// init(), because they have no Go shim to hold the declaration. Clients
+	// reach them through the gateway the same way, so they still need a route.
+	registry.RegisterRoutes("spanner.googleapis.com",
+		"/v1/projects/*/instances",
+		"/v1/projects/*/instanceConfigs",
+	)
+
+	registry.RegisterRoutes("firestore.googleapis.com",
+		"/v1/projects/*/databases",
+	)
+
+	// Datastore puts its custom methods on the project itself, as
+	// /v1/projects/{projectId}:runQuery, so each verb is named explicitly.
+	// "/v1/projects/*" would match, but it would also swallow every other
+	// service sharing that prefix.
+	registry.RegisterRoutes("datastore.googleapis.com",
+		"/v1/projects/*:runQuery",
+		"/v1/projects/*:runAggregationQuery",
+		"/v1/projects/*:lookup",
+		"/v1/projects/*:commit",
+		"/v1/projects/*:beginTransaction",
+		"/v1/projects/*:rollback",
+		"/v1/projects/*:allocateIds",
+		"/v1/projects/*:reserveIds",
+	)
 }

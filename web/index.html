@@ -60,9 +60,9 @@
                     <p>Develop, test, and run CI/CD pipelines offline. Never pay for local dev again.</p>
                 </div>
                 <div class="value-card">
-                    <div class="icon-wrapper bg-yellow">🛠️</div>
-                    <h3>Analytics Engineering</h3>
-                    <p>New in v1.4.1: run a full dbt + Airflow pipeline against emulated BigQuery, Cloud Storage and Pub/Sub &mdash; provisioned by Terraform, installed onto an emulated VM, with zero cloud spend.</p>
+                    <div class="icon-wrapper bg-yellow">🏛️</div>
+                    <h3>Organization Hierarchy</h3>
+                    <p>New in v1.5.0: build a landing zone locally &mdash; organizations, folders and projects through Cloud Resource Manager, <code>minisky iam explain</code> to see what a policy actually grants, and state that survives a restart.</p>
                 </div>
             </div>
         </div>
@@ -146,8 +146,10 @@ provider "google" {
                     <span class="text-muted">Deploy a serverless resource</span></p>
                     <p style="margin-bottom: 12px;"><code>minisky list</code><br>
                     <span class="text-muted">List all active resources</span></p>
-                    <p><code>minisky logs</code><br>
+                    <p style="margin-bottom: 12px;"><code>minisky logs</code><br>
                     <span class="text-muted">Manage Cloud Logging output</span></p>
+                    <p><code>minisky iam explain</code><br>
+                    <span class="text-muted">Why a principal has a permission</span></p>
                 </div>
                 <div class="value-card">
                     <h3>Service Emulation</h3>

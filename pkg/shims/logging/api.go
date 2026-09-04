@@ -20,6 +20,13 @@ func init() {
 	registry.Register("logging.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI()
 	})
+
+	registry.RegisterRoutes("logging.googleapis.com",
+		"/v2/entries:list",
+		"/v2/entries:write",
+		"/v2/projects/*/logs",
+		"/v1/internal/logs",
+	)
 }
 
 type LogEntry struct {

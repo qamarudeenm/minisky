@@ -189,8 +189,9 @@ labels from bucket insert/patch requests and overlays them onto the emulator's r
 a single bucket and a bucket listing. Responses for buckets it has not seen pass through
 untouched, and the registry is dropped on delete. Covered by `metadata_test.go`.
 
-The registry is in-memory, so buckets created before a restart report the emulator's default again
-until they are re-created — the same limitation as item 15.
+The registry was in-memory at first, so a restart brought the bug straight back: a bucket created
+before it reported `US-CENTRAL1` again and lost its labels, and the next apply destroyed it. The
+registry is now persisted through `pkg/persist` — see item 20.
 
 ### 14. ~~Instance updates returned 405, and the shim overwrote the caller's description~~ — **fixed**
 
@@ -329,15 +330,49 @@ than truncating the statement, and a column or alias named `options` in a query 
 Covered by `TestStripsOptionsClauseFromDDL`, `TestLeavesOptionsAloneOutsideDDL` and
 `TestUnbalancedOptionsClauseIsLeftAlone`.
 
-### 20. Dataset and table metadata does not survive a restart — **medium, open**
+### 20. ~~Resource metadata did not survive a restart~~ — **fixed**
 
-`api.datasets` and `api.tables` are in-memory only. DuckDB keeps the data, but after
-`minisky restart` a `terraform plan` sees every dataset and table as missing and proposes to
-recreate them. The reconciliation added for item 4 repairs the table registry after the first
-query, but nothing repairs it before that, and datasets are never repaired.
+Most shims held their resource metadata for the lifetime of the process, so a restart did not
+merely forget things — it made the emulator contradict what it had just said, and `terraform plan`
+reads a contradiction as drift. BigQuery was the case found here: DuckDB kept the data, but
+`api.datasets` and `api.tables` were in-memory, so after `minisky restart` a plan saw every dataset
+and table as missing and proposed to recreate them. Storage was worse, because there the drift was
+on a ForceNew attribute — see item 13.
 
-**Fix:** persist the dataset/table registry alongside the DuckDB file, or rebuild it from
-`information_schema` at startup the way `reconcileTables` does after a query.
+**Fixed in `pkg/persist`,** a shared helper that writes JSON under `~/.minisky` through a temporary
+file and a rename, so a daemon killed mid-write leaves the previous state intact rather than a
+truncated file. Four shims use it:
+
+| shim | what is now durable |
+|---|---|
+| `storage` | bucket location, storage class, labels |
+| `bigquery` | datasets and tables, including schema, labels and descriptions |
+| `compute` | instances, networks, firewall rules, security policies |
+| `iam` | service accounts, keys, policy bindings |
+
+Two details matter beyond writing the file. Compute reconciles instance status against Docker on
+load instead of replaying the stored value — a container can be stopped or removed while the daemon
+is down, and an instance whose container is gone is dropped rather than reported as running. And
+firewall rules are re-registered with the service manager, whose enforcement registry starts empty:
+without that a rule still present in Terraform state silently stopped being applied.
+
+Covered by `TestRegistrySurvivesARestart`, `TestDatasetMetadataSurvivesARestart`,
+`TestTableSchemaSurvivesARestart`, `TestNetworkSurvivesARestart`,
+`TestFirewallRuleIsReregisteredAfterARestart`, `TestInstanceStatusIsReconciledAgainstDocker`,
+`TestServiceAccountSurvivesARestart` and `TestPolicySurvivesARestart`.
+
+Every other shim followed: App Engine, Artifact Registry, Bigtable, Cloud Billing, Cloud KMS,
+Cloud SQL, Cloud Tasks, Dataproc, Cloud DNS, GKE, Memorystore, Cloud Scheduler, Secret Manager and
+the serverless shim. Three of those lose more than a record when forgotten — a Cloud KMS key ring
+takes every ciphertext written under it, a secret's payload exists nowhere else, and a scheduler job
+restored without its cron entry reads back as `ENABLED` while never firing again — so KMS persists
+its key material, Secret Manager its payloads, and the scheduler re-arms the cron on load.
+
+A separate and larger problem sat underneath all of this: MiniSky removes its emulator containers on
+shutdown, and fake-gcs-server had no volume, so a restart destroyed the buckets **and every object
+in them** rather than merely resetting their metadata. Cloud Storage now keeps its data in a named
+Docker volume. The remaining emulators — Pub/Sub, Firestore, Bigtable and Spanner — are in-memory by
+design and have no data directory to mount.
 
 ---
 
@@ -352,8 +387,7 @@ produces a mart that `tables.get` can then describe.
 The five that remain are all workable from the client side, and each is noted where the example
 works around it: item 5 (`provision.tf` uses `docker exec`), item 7 (`auto_create_subnetworks`),
 item 8 (BigQuery serves as the serving layer instead of Cloud SQL), item 9 (the DAG ingests with
-`INSERT` rather than a load job), item 10 (`depends_on` orders firewall rules before the VM),
-and item 20 (re-apply after a restart).
+`INSERT` rather than a load job), and item 10 (`depends_on` orders firewall rules before the VM).
 
 Items 11 through 19 were found by the exercise itself rather than by reading the source — by
 running `terraform apply` twice and reading the second plan, then by pushing an actual pipeline
