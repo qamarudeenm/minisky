@@ -1,0 +1,393 @@
+{
+  "_comment": [
+    "A curated catalogue of predefined roles, covering what a landing zone",
+    "actually uses. Google publishes roughly 1,250 roles and 10,000",
+    "permissions with no offline feed, so this is deliberately a subset and",
+    "says so: every entry is marked curated, and MiniSky reports a permission",
+    "answer as drawn from a curated list rather than as a verdict.",
+    "",
+    "Extend or replace it with ~/.minisky/roles.json, which overlays this by",
+    "role name. Use the same shape:",
+    "  { \"roles\": { \"roles/example.admin\": { \"permissions\": [\"a.b.c\"] } } }"
+  ],
+  "roles": {
+    "roles/owner": {
+      "title": "Owner",
+      "includes": ["roles/editor"],
+      "permissions": [
+        "resourcemanager.projects.delete",
+        "resourcemanager.projects.setIamPolicy",
+        "resourcemanager.folders.setIamPolicy",
+        "resourcemanager.organizations.setIamPolicy",
+        "iam.roles.create", "iam.roles.delete", "iam.roles.update"
+      ]
+    },
+    "roles/editor": {
+      "title": "Editor",
+      "includes": ["roles/viewer"],
+      "permissions": [
+        "resourcemanager.projects.update",
+        "compute.instances.create", "compute.instances.delete", "compute.instances.start",
+        "compute.instances.stop", "compute.networks.create", "compute.firewalls.create",
+        "storage.buckets.create", "storage.buckets.delete", "storage.objects.create",
+        "storage.objects.delete", "bigquery.datasets.create", "bigquery.datasets.delete",
+        "bigquery.tables.create", "bigquery.tables.delete", "bigquery.tables.updateData",
+        "pubsub.topics.create", "pubsub.topics.delete", "pubsub.topics.publish",
+        "pubsub.subscriptions.create", "pubsub.subscriptions.consume",
+        "cloudsql.instances.create", "cloudsql.instances.delete",
+        "container.clusters.create", "container.clusters.delete",
+        "secretmanager.secrets.create", "secretmanager.versions.add"
+      ]
+    },
+    "roles/viewer": {
+      "title": "Viewer",
+      "permissions": [
+        "resourcemanager.projects.get", "resourcemanager.projects.list",
+        "resourcemanager.folders.get", "resourcemanager.folders.list",
+        "resourcemanager.organizations.get",
+        "compute.instances.get", "compute.instances.list",
+        "compute.networks.get", "compute.networks.list", "compute.firewalls.list",
+        "storage.buckets.get", "storage.buckets.list", "storage.objects.get",
+        "storage.objects.list", "bigquery.datasets.get", "bigquery.tables.get",
+        "bigquery.tables.list", "bigquery.tables.getData",
+        "pubsub.topics.get", "pubsub.topics.list", "pubsub.subscriptions.get",
+        "cloudsql.instances.get", "cloudsql.instances.list",
+        "container.clusters.get", "container.clusters.list",
+        "logging.logEntries.list", "monitoring.timeSeries.list"
+      ]
+    },
+    "roles/browser": {
+      "title": "Browser",
+      "permissions": [
+        "resourcemanager.projects.get", "resourcemanager.projects.list",
+        "resourcemanager.folders.get", "resourcemanager.folders.list",
+        "resourcemanager.organizations.get"
+      ]
+    },
+
+    "roles/resourcemanager.organizationAdmin": {
+      "title": "Organization Administrator",
+      "permissions": [
+        "resourcemanager.organizations.get", "resourcemanager.organizations.getIamPolicy",
+        "resourcemanager.organizations.setIamPolicy",
+        "resourcemanager.folders.create", "resourcemanager.folders.delete",
+        "resourcemanager.folders.get", "resourcemanager.folders.list",
+        "resourcemanager.folders.move", "resourcemanager.folders.update",
+        "resourcemanager.folders.getIamPolicy", "resourcemanager.folders.setIamPolicy",
+        "resourcemanager.projects.get", "resourcemanager.projects.list"
+      ]
+    },
+    "roles/resourcemanager.folderAdmin": {
+      "title": "Folder Administrator",
+      "permissions": [
+        "resourcemanager.folders.create", "resourcemanager.folders.delete",
+        "resourcemanager.folders.get", "resourcemanager.folders.list",
+        "resourcemanager.folders.move", "resourcemanager.folders.update",
+        "resourcemanager.folders.undelete",
+        "resourcemanager.folders.getIamPolicy", "resourcemanager.folders.setIamPolicy",
+        "resourcemanager.projects.get", "resourcemanager.projects.list"
+      ]
+    },
+    "roles/resourcemanager.folderCreator": {
+      "title": "Folder Creator",
+      "permissions": [
+        "resourcemanager.folders.create", "resourcemanager.folders.get",
+        "resourcemanager.folders.list"
+      ]
+    },
+    "roles/resourcemanager.folderViewer": {
+      "title": "Folder Viewer",
+      "permissions": [
+        "resourcemanager.folders.get", "resourcemanager.folders.list",
+        "resourcemanager.projects.get", "resourcemanager.projects.list"
+      ]
+    },
+    "roles/resourcemanager.folderIamAdmin": {
+      "title": "Folder IAM Admin",
+      "permissions": [
+        "resourcemanager.folders.get", "resourcemanager.folders.getIamPolicy",
+        "resourcemanager.folders.setIamPolicy"
+      ]
+    },
+    "roles/resourcemanager.projectCreator": {
+      "title": "Project Creator",
+      "permissions": [
+        "resourcemanager.projects.create", "resourcemanager.projects.get",
+        "resourcemanager.projects.list", "resourcemanager.organizations.get"
+      ]
+    },
+    "roles/resourcemanager.projectDeleter": {
+      "title": "Project Deleter",
+      "permissions": ["resourcemanager.projects.delete", "resourcemanager.projects.get"]
+    },
+    "roles/resourcemanager.projectMover": {
+      "title": "Project Mover",
+      "permissions": ["resourcemanager.projects.move", "resourcemanager.projects.get"]
+    },
+    "roles/resourcemanager.projectIamAdmin": {
+      "title": "Project IAM Admin",
+      "permissions": [
+        "resourcemanager.projects.get", "resourcemanager.projects.getIamPolicy",
+        "resourcemanager.projects.setIamPolicy"
+      ]
+    },
+
+    "roles/iam.securityAdmin": {
+      "title": "Security Admin",
+      "permissions": [
+        "resourcemanager.projects.getIamPolicy", "resourcemanager.projects.setIamPolicy",
+        "resourcemanager.folders.getIamPolicy", "resourcemanager.folders.setIamPolicy",
+        "resourcemanager.organizations.getIamPolicy", "resourcemanager.organizations.setIamPolicy",
+        "iam.roles.get", "iam.roles.list", "iam.serviceAccounts.getIamPolicy",
+        "iam.serviceAccounts.setIamPolicy"
+      ]
+    },
+    "roles/iam.securityReviewer": {
+      "title": "Security Reviewer",
+      "permissions": [
+        "resourcemanager.projects.getIamPolicy", "resourcemanager.folders.getIamPolicy",
+        "resourcemanager.organizations.getIamPolicy", "iam.roles.get", "iam.roles.list"
+      ]
+    },
+    "roles/iam.serviceAccountAdmin": {
+      "title": "Service Account Admin",
+      "permissions": [
+        "iam.serviceAccounts.create", "iam.serviceAccounts.delete",
+        "iam.serviceAccounts.get", "iam.serviceAccounts.list",
+        "iam.serviceAccounts.update", "iam.serviceAccounts.getIamPolicy",
+        "iam.serviceAccounts.setIamPolicy"
+      ]
+    },
+    "roles/iam.serviceAccountUser": {
+      "title": "Service Account User",
+      "permissions": [
+        "iam.serviceAccounts.actAs", "iam.serviceAccounts.get", "iam.serviceAccounts.list"
+      ]
+    },
+    "roles/iam.serviceAccountTokenCreator": {
+      "title": "Service Account Token Creator",
+      "permissions": [
+        "iam.serviceAccounts.getAccessToken", "iam.serviceAccounts.signBlob",
+        "iam.serviceAccounts.signJwt", "iam.serviceAccounts.implicitDelegation"
+      ]
+    },
+
+    "roles/billing.admin": {
+      "title": "Billing Account Administrator",
+      "permissions": [
+        "billing.accounts.get", "billing.accounts.list",
+        "billing.resourceAssociations.create", "billing.resourceAssociations.delete",
+        "resourcemanager.projects.createBillingAssignment"
+      ]
+    },
+    "roles/billing.user": {
+      "title": "Billing Account User",
+      "permissions": ["billing.accounts.get", "billing.resourceAssociations.create"]
+    },
+    "roles/billing.projectManager": {
+      "title": "Project Billing Manager",
+      "permissions": [
+        "resourcemanager.projects.createBillingAssignment",
+        "resourcemanager.projects.deleteBillingAssignment"
+      ]
+    },
+
+    "roles/compute.admin": {
+      "title": "Compute Admin",
+      "permissions": [
+        "compute.instances.create", "compute.instances.delete", "compute.instances.get",
+        "compute.instances.list", "compute.instances.start", "compute.instances.stop",
+        "compute.networks.create", "compute.networks.delete", "compute.networks.get",
+        "compute.networks.list", "compute.firewalls.create", "compute.firewalls.delete",
+        "compute.firewalls.get", "compute.firewalls.list", "compute.subnetworks.create",
+        "compute.subnetworks.get", "compute.subnetworks.list"
+      ]
+    },
+    "roles/compute.instanceAdmin.v1": {
+      "title": "Compute Instance Admin (v1)",
+      "permissions": [
+        "compute.instances.create", "compute.instances.delete", "compute.instances.get",
+        "compute.instances.list", "compute.instances.start", "compute.instances.stop",
+        "compute.instances.setMetadata"
+      ]
+    },
+    "roles/compute.networkAdmin": {
+      "title": "Compute Network Admin",
+      "permissions": [
+        "compute.networks.create", "compute.networks.delete", "compute.networks.get",
+        "compute.networks.list", "compute.networks.updatePolicy",
+        "compute.firewalls.create", "compute.firewalls.delete", "compute.firewalls.get",
+        "compute.firewalls.list", "compute.subnetworks.create", "compute.subnetworks.get"
+      ]
+    },
+    "roles/compute.networkUser": {
+      "title": "Compute Network User",
+      "permissions": [
+        "compute.networks.get", "compute.networks.list", "compute.networks.use",
+        "compute.subnetworks.get", "compute.subnetworks.use"
+      ]
+    },
+    "roles/compute.viewer": {
+      "title": "Compute Viewer",
+      "permissions": [
+        "compute.instances.get", "compute.instances.list", "compute.networks.get",
+        "compute.networks.list", "compute.firewalls.get", "compute.firewalls.list"
+      ]
+    },
+
+    "roles/storage.admin": {
+      "title": "Storage Admin",
+      "permissions": [
+        "storage.buckets.create", "storage.buckets.delete", "storage.buckets.get",
+        "storage.buckets.list", "storage.buckets.update", "storage.buckets.setIamPolicy",
+        "storage.objects.create", "storage.objects.delete", "storage.objects.get",
+        "storage.objects.list", "storage.objects.update"
+      ]
+    },
+    "roles/storage.objectAdmin": {
+      "title": "Storage Object Admin",
+      "permissions": [
+        "storage.objects.create", "storage.objects.delete", "storage.objects.get",
+        "storage.objects.list", "storage.objects.update"
+      ]
+    },
+    "roles/storage.objectViewer": {
+      "title": "Storage Object Viewer",
+      "permissions": ["storage.objects.get", "storage.objects.list", "storage.buckets.get"]
+    },
+    "roles/storage.objectCreator": {
+      "title": "Storage Object Creator",
+      "permissions": ["storage.objects.create"]
+    },
+
+    "roles/bigquery.admin": {
+      "title": "BigQuery Admin",
+      "permissions": [
+        "bigquery.datasets.create", "bigquery.datasets.delete", "bigquery.datasets.get",
+        "bigquery.datasets.update", "bigquery.tables.create", "bigquery.tables.delete",
+        "bigquery.tables.get", "bigquery.tables.list", "bigquery.tables.getData",
+        "bigquery.tables.updateData", "bigquery.jobs.create", "bigquery.jobs.get"
+      ]
+    },
+    "roles/bigquery.dataEditor": {
+      "title": "BigQuery Data Editor",
+      "permissions": [
+        "bigquery.datasets.get", "bigquery.tables.create", "bigquery.tables.delete",
+        "bigquery.tables.get", "bigquery.tables.list", "bigquery.tables.getData",
+        "bigquery.tables.updateData"
+      ]
+    },
+    "roles/bigquery.dataViewer": {
+      "title": "BigQuery Data Viewer",
+      "permissions": [
+        "bigquery.datasets.get", "bigquery.tables.get", "bigquery.tables.list",
+        "bigquery.tables.getData"
+      ]
+    },
+    "roles/bigquery.jobUser": {
+      "title": "BigQuery Job User",
+      "permissions": ["bigquery.jobs.create", "bigquery.jobs.get", "bigquery.jobs.list"]
+    },
+
+    "roles/pubsub.admin": {
+      "title": "Pub/Sub Admin",
+      "permissions": [
+        "pubsub.topics.create", "pubsub.topics.delete", "pubsub.topics.get",
+        "pubsub.topics.list", "pubsub.topics.publish", "pubsub.subscriptions.create",
+        "pubsub.subscriptions.delete", "pubsub.subscriptions.get",
+        "pubsub.subscriptions.list", "pubsub.subscriptions.consume"
+      ]
+    },
+    "roles/pubsub.publisher": {
+      "title": "Pub/Sub Publisher",
+      "permissions": ["pubsub.topics.publish", "pubsub.topics.get"]
+    },
+    "roles/pubsub.subscriber": {
+      "title": "Pub/Sub Subscriber",
+      "permissions": ["pubsub.subscriptions.consume", "pubsub.subscriptions.get"]
+    },
+
+    "roles/container.admin": {
+      "title": "Kubernetes Engine Admin",
+      "permissions": [
+        "container.clusters.create", "container.clusters.delete", "container.clusters.get",
+        "container.clusters.list", "container.clusters.update", "container.operations.get"
+      ]
+    },
+    "roles/container.developer": {
+      "title": "Kubernetes Engine Developer",
+      "permissions": ["container.clusters.get", "container.clusters.list"]
+    },
+
+    "roles/secretmanager.admin": {
+      "title": "Secret Manager Admin",
+      "permissions": [
+        "secretmanager.secrets.create", "secretmanager.secrets.delete",
+        "secretmanager.secrets.get", "secretmanager.secrets.list",
+        "secretmanager.versions.add", "secretmanager.versions.access",
+        "secretmanager.secrets.setIamPolicy"
+      ]
+    },
+    "roles/secretmanager.secretAccessor": {
+      "title": "Secret Manager Secret Accessor",
+      "permissions": ["secretmanager.versions.access"]
+    },
+
+    "roles/cloudkms.admin": {
+      "title": "Cloud KMS Admin",
+      "permissions": [
+        "cloudkms.keyRings.create", "cloudkms.keyRings.get", "cloudkms.keyRings.list",
+        "cloudkms.cryptoKeys.create", "cloudkms.cryptoKeys.get", "cloudkms.cryptoKeys.list"
+      ]
+    },
+    "roles/cloudkms.cryptoKeyEncrypterDecrypter": {
+      "title": "Cloud KMS CryptoKey Encrypter/Decrypter",
+      "permissions": ["cloudkms.cryptoKeyVersions.useToEncrypt", "cloudkms.cryptoKeyVersions.useToDecrypt"]
+    },
+
+    "roles/logging.logWriter": {
+      "title": "Logs Writer",
+      "permissions": ["logging.logEntries.create"]
+    },
+    "roles/logging.viewer": {
+      "title": "Logs Viewer",
+      "permissions": ["logging.logEntries.list", "logging.logs.list"]
+    },
+    "roles/monitoring.metricWriter": {
+      "title": "Monitoring Metric Writer",
+      "permissions": ["monitoring.timeSeries.create"]
+    },
+    "roles/monitoring.viewer": {
+      "title": "Monitoring Viewer",
+      "permissions": ["monitoring.timeSeries.list", "monitoring.metricDescriptors.list"]
+    },
+
+    "roles/cloudsql.admin": {
+      "title": "Cloud SQL Admin",
+      "permissions": [
+        "cloudsql.instances.create", "cloudsql.instances.delete", "cloudsql.instances.get",
+        "cloudsql.instances.list", "cloudsql.instances.update", "cloudsql.databases.create"
+      ]
+    },
+    "roles/cloudsql.client": {
+      "title": "Cloud SQL Client",
+      "permissions": ["cloudsql.instances.connect", "cloudsql.instances.get"]
+    },
+
+    "roles/run.admin": {
+      "title": "Cloud Run Admin",
+      "permissions": [
+        "run.services.create", "run.services.delete", "run.services.get",
+        "run.services.list", "run.services.update"
+      ]
+    },
+    "roles/run.invoker": {
+      "title": "Cloud Run Invoker",
+      "permissions": ["run.routes.invoke", "run.services.get"]
+    },
+    "roles/cloudfunctions.invoker": {
+      "title": "Cloud Functions Invoker",
+      "permissions": ["cloudfunctions.functions.invoke"]
+    }
+  }
+}

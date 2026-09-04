@@ -29,6 +29,8 @@ func init() {
 		"/v3/projects:search",
 		"/v3/organizations:search",
 		"/v1/organizations:search",
+		// MiniSky's own policy analysis, used by the CLI and the dashboard.
+		"/v1/internal/iam/analyze",
 		// A folder operation is polled at {base}/v3/operations/{id} and a project
 		// operation at {base}/v1/operations/{id}, so both generations serve them.
 		"/v3/operations",
@@ -90,6 +92,8 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		api.routeOrganizations(w, r, path)
 	case strings.HasPrefix(path, "/v3/operations"), strings.HasPrefix(path, "/v1/operations"):
 		api.getOperation(w, path)
+	case path == "/v1/internal/iam/analyze":
+		api.handleAnalyze(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "unknown Resource Manager path "+path)
 	}
