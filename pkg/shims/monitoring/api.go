@@ -16,6 +16,14 @@ func init() {
 	registry.Register("monitoring.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("monitoring.googleapis.com",
+		"/v3/projects/*/timeSeries",
+		"/v3/projects/*/metricDescriptors",
+		"/v3/projects/*/monitoredResourceDescriptors",
+		"/v3/projects/*/alertPolicies",
+		"/v3/projects/*/uptimeCheckConfigs",
+	)
 }
 
 func (api *API) OnPostBoot(ctx *registry.Context) {

@@ -17,6 +17,18 @@ func init() {
 	registry.Register("container.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr)
 	})
+
+	registry.RegisterRoutes("container.googleapis.com",
+		"/v1/projects/*/locations/*/clusters",
+		"/v1/projects/*/zones/*/clusters",
+		// Only the zonal operations path is GKE's alone. The regional one,
+		// /v1/projects/*/locations/*/operations, is shared with several other
+		// APIs and is resolved by operation id instead — see
+		// registry.RegisterOperationKinds below.
+		"/v1/projects/*/zones/*/operations",
+	)
+
+	registry.RegisterOperationKinds("container.googleapis.com", "container#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -20,6 +20,12 @@ func init() {
 			repos:  make(map[string]*Repository),
 		}
 	})
+
+	registry.RegisterRoutes("artifactregistry.googleapis.com",
+		"/v1/projects/*/locations/*/repositories",
+	)
+
+	registry.RegisterOperationKinds("artifactregistry.googleapis.com", "artifactregistry#operation")
 }
 
 type Repository struct {

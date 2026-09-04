@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -9,6 +10,7 @@ import (
 	"sync"
 
 	"minisky/pkg/orchestrator"
+	"minisky/pkg/registry"
 	"minisky/pkg/validator"
 )
 
@@ -19,6 +21,9 @@ type ProxyRouter struct {
 	lazyDomains map[string]bool // domains that should trigger Docker orchestration
 	validator   *validator.Validator
 	serviceMgr  *orchestrator.ServiceManager
+	pathRoutes  *routeTable
+	operations  operationLookup
+	opKinds     map[string]string
 }
 
 // NewProxyRouterWithManager creates the router with a pre-initialized ServiceManager injected.
@@ -28,6 +33,10 @@ func NewProxyRouterWithManager(sm *orchestrator.ServiceManager) *ProxyRouter {
 		lazyDomains: make(map[string]bool),
 		validator:   validator.NewValidator(),
 		serviceMgr:  sm,
+		// Shims declare their URL patterns in init(), which has already run by
+		// the time any router is constructed.
+		pathRoutes: newRouteTable(registry.Routes()),
+		opKinds:    registry.OperationKinds(),
 	}
 }
 
@@ -38,6 +47,16 @@ func NewProxyRouter() *ProxyRouter {
 		log.Printf("[WARN] Failed to initialize Docker ServiceManager: %v", err)
 	}
 	return NewProxyRouterWithManager(sm)
+}
+
+// SetOperationManager gives the router the shared OperationManager, so a poll of
+// a long-running operation can be attributed to the service that minted it. A
+// router without one still routes by path; it just cannot disambiguate the
+// operations paths several services share.
+func (p *ProxyRouter) SetOperationManager(om *orchestrator.OperationManager) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.operations = om
 }
 
 // RegisterProxy maps a domain to a fixed external backend URL.
@@ -84,25 +103,27 @@ func isGoogleServiceHost(host string) bool {
 		strings.HasSuffix(host, "google.internal")
 }
 
-// pathMappedDomain maps a request path onto the service that owns it, or ""
-// when no prefix matches.
-func pathMappedDomain(path string) string {
-	switch {
-	case strings.HasPrefix(path, "/storage/") || strings.HasPrefix(path, "/upload/storage/"):
-		return "storage.googleapis.com"
-	case strings.HasPrefix(path, "/bigquery/"):
-		return "bigquery.googleapis.com"
-	case (strings.HasPrefix(path, "/v1/projects/") || strings.HasPrefix(path, "/projects/")) &&
-		(strings.Contains(path, "/topics") || strings.Contains(path, "/subscriptions")):
-		return "pubsub.googleapis.com"
-	case strings.HasPrefix(path, "/v2/") ||
-		(strings.HasPrefix(path, "/v1/projects/") && strings.Contains(path, "/locations/")):
-		return "cloudfunctions.googleapis.com"
-	case strings.HasPrefix(path, "/compute/"):
-		return "compute.googleapis.com"
-	default:
-		return ""
+// writeUnrouted explains that no service claims this request. Naming the Host
+// header alone ("'localhost:8080' is not yet implemented") describes the
+// router's lookup key, which means nothing to the caller and reads as a network
+// fault through gcloud — so name the path, and what the gateway serves near it.
+func (p *ProxyRouter) writeUnrouted(w http.ResponseWriter, r *http.Request, targetDomain string) {
+	message := "MiniSky: no service is registered for " + r.URL.Path
+
+	if isGoogleServiceHost(targetDomain) {
+		message = "MiniSky: '" + targetDomain + "' is not emulated"
+	} else if near := p.pathRoutes.candidates(r.URL.Path); len(near) > 0 {
+		message += " (nearest emulated services on this prefix: " + strings.Join(near, ", ") + ")"
 	}
+
+	log.Printf("[Router] Unrouted %s %s (Host: %s)", r.Method, r.URL.Path, r.Host)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	body := map[string]any{"error": map[string]any{
+		"code": 501, "message": message, "status": "UNIMPLEMENTED",
+	}}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +139,16 @@ func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Requests that already name a Google domain keep domain-based routing, so
 	// an SDK pointed at bigquery.googleapis.com still reaches its shim.
 	if !isGoogleServiceHost(targetDomain) {
-		if mapped := pathMappedDomain(r.URL.Path); mapped != "" {
+		p.mu.RLock()
+		ops := p.operations
+		p.mu.RUnlock()
+
+		// An operation poll is attributed to whichever service created it,
+		// because several services publish the same operations path.
+		if owner := resolveOperation(r.URL.Path, ops, p.opKinds); owner != "" {
+			targetDomain = owner
+			log.Printf("[Router] Operation-mapped request from %s: %s -> %s", r.Host, r.URL.Path, targetDomain)
+		} else if mapped := p.pathRoutes.resolve(r.URL.Path); mapped != "" {
 			targetDomain = mapped
 			log.Printf("[Router] Path-mapped request from %s: %s -> %s", r.Host, r.URL.Path, targetDomain)
 		}
@@ -174,9 +204,7 @@ func (p *ProxyRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.mu.RUnlock()
 
 	if !exists {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		w.Write([]byte(`{"error":{"code":501,"message":"MiniSky: '` + targetDomain + `' is not yet implemented","status":"UNIMPLEMENTED"}}`))
+		p.writeUnrouted(w, r, targetDomain)
 		return
 	}
 

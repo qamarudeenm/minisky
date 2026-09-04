@@ -19,6 +19,12 @@ func init() {
 	registry.Register("compute.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("compute.googleapis.com",
+		"/compute/v1",
+	)
+
+	registry.RegisterOperationKinds("compute.googleapis.com", "compute#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

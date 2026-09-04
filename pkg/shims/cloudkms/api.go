@@ -22,6 +22,10 @@ func init() {
 	registry.Register("cloudkms.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI()
 	})
+
+	registry.RegisterRoutes("cloudkms.googleapis.com",
+		"/v1/projects/*/locations/*/keyRings",
+	)
 }
 
 // ---------------------------------------------------------------------------

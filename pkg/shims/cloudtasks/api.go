@@ -17,6 +17,10 @@ func init() {
 	registry.Register("cloudtasks.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI()
 	})
+
+	registry.RegisterRoutes("cloudtasks.googleapis.com",
+		"/v2/projects/*/locations/*/queues",
+	)
 }
 
 type Task struct {

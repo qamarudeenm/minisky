@@ -22,6 +22,10 @@ func init() {
 	registry.Register("bigquery.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr)
 	})
+
+	registry.RegisterRoutes("bigquery.googleapis.com",
+		"/bigquery/v2",
+	)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

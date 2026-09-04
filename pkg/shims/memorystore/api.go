@@ -26,6 +26,15 @@ func init() {
 	}
 	registry.Register("redis.googleapis.com", f)
 	registry.Register("memcache.googleapis.com", f)
+
+	// redis and memcache share this path in the real API too — they are told
+	// apart by hostname. Both domains resolve to this shim, so routing is
+	// correct either way; distinguishing them internally is a separate fix.
+	registry.RegisterRoutes("redis.googleapis.com",
+		"/v1/projects/*/locations/*/instances",
+	)
+
+	registry.RegisterOperationKinds("redis.googleapis.com", "memorystore#operation")
 }
 
 type Instance struct {

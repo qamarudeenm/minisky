@@ -39,6 +39,12 @@ func init() {
 		return singletonAPI
 	}
 	registry.Register("appengine.googleapis.com", f)
+
+	registry.RegisterRoutes("appengine.googleapis.com",
+		"/v1/apps",
+	)
+
+	registry.RegisterOperationKinds("appengine.googleapis.com", "appengine#operation")
 }
 
 // AppEngine Resources

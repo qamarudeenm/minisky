@@ -23,6 +23,10 @@ func init() {
 		}
 		return NewAPI(logAPI)
 	})
+
+	registry.RegisterRoutes("cloudscheduler.googleapis.com",
+		"/v1/projects/*/locations/*/jobs",
+	)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

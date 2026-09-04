@@ -16,6 +16,12 @@ func init() {
 	registry.Register("iam.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI()
 	})
+
+	registry.RegisterRoutes("iam.googleapis.com",
+		"/v1/projects/*/serviceAccounts",
+		"/v1/projects/*/roles",
+		"/v1/roles",
+	)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

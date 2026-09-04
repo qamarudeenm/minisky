@@ -17,6 +17,12 @@ func init() {
 	registry.Register("sqladmin.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("sqladmin.googleapis.com",
+		"/sql/v1beta4",
+	)
+
+	registry.RegisterOperationKinds("sqladmin.googleapis.com", "sql#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

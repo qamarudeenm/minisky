@@ -18,6 +18,14 @@ func init() {
 	registry.Register("dataproc.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.OpMgr, ctx.SvcMgr)
 	})
+
+	registry.RegisterRoutes("dataproc.googleapis.com",
+		"/v1/projects/*/regions/*/clusters",
+		"/v1/projects/*/regions/*/jobs",
+		"/v1/projects/*/regions/*/operations",
+	)
+
+	registry.RegisterOperationKinds("dataproc.googleapis.com", "dataproc#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -37,4 +37,12 @@ func init() {
 	registry.RegisterLazyDocker("firestore.googleapis.com")
 	registry.RegisterLazyDocker("datastore.googleapis.com")
 	registry.RegisterLazyDocker("spanner.googleapis.com")
+
+	// Docker-backed services declare their routes here rather than in a shim
+	// init(), because they have no Go shim to hold the declaration. Clients
+	// reach them through the gateway the same way, so they still need a route.
+	registry.RegisterRoutes("spanner.googleapis.com",
+		"/v1/projects/*/instances",
+		"/v1/projects/*/instanceConfigs",
+	)
 }

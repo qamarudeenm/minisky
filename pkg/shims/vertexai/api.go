@@ -22,6 +22,15 @@ func init() {
 			model:    "llama3",
 		}
 	})
+
+	registry.RegisterRoutes("aiplatform.googleapis.com",
+		"/v1/projects/*/locations/*/models",
+		"/v1/projects/*/locations/*/endpoints",
+		"/v1/projects/*/locations/*/datasets",
+		"/v1/projects/*/locations/*/trainingPipelines",
+		"/v1/internal/models",
+		"/v1/internal/config",
+	)
 }
 
 type API struct {

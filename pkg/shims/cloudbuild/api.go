@@ -22,6 +22,15 @@ func init() {
 			buildLogs: make(map[string][]LogEntry),
 		}
 	})
+
+	registry.RegisterRoutes("cloudbuild.googleapis.com",
+		"/v1/projects/*/builds",
+		"/v1/projects/*/triggers",
+		"/v1/projects/*/locations/*/builds",
+		"/v1/projects/*/locations/*/triggers",
+	)
+
+	registry.RegisterOperationKinds("cloudbuild.googleapis.com", "cloudbuild#operation")
 }
 
 type LogEntry struct {

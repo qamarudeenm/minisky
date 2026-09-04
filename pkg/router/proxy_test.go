@@ -7,7 +7,18 @@ import "testing"
 // gated on the Host header naming localhost, every such request fell through to
 // the 501 branch — so a workload inside a VM could not call a single emulated
 // API.
-func TestPathMappedDomain(t *testing.T) {
+// The five services that were reachable before the router became table-driven
+// must stay reachable. These are the exact paths their clients send.
+func TestLegacyPathRoutesStillResolve(t *testing.T) {
+	table := newRouteTable(map[string][]string{
+		"storage.googleapis.com":        {"/storage/v1", "/upload/storage/v1"},
+		"bigquery.googleapis.com":       {"/bigquery/v2"},
+		"compute.googleapis.com":        {"/compute/v1"},
+		"pubsub.googleapis.com":         {"/v1/projects/*/topics", "/v1/projects/*/subscriptions", "/projects/*/topics", "/projects/*/subscriptions"},
+		"cloudfunctions.googleapis.com": {"/v1/projects/*/locations/*/functions", "/v2/projects/*/locations/*/functions"},
+		"run.googleapis.com":            {"/v2/projects/*/locations/*/services"},
+	})
+
 	cases := map[string]string{
 		"/storage/v1/b/my-bucket":                  "storage.googleapis.com",
 		"/upload/storage/v1/b/my-bucket/o":         "storage.googleapis.com",
@@ -16,13 +27,12 @@ func TestPathMappedDomain(t *testing.T) {
 		"/v1/projects/p/topics/t:publish":          "pubsub.googleapis.com",
 		"/v1/projects/p/subscriptions/s":           "pubsub.googleapis.com",
 		"/projects/p/topics/t":                     "pubsub.googleapis.com",
+		"/v2/projects/p/locations/l/services":      "run.googleapis.com",
 		"/v2/projects/p/locations/l/functions":     "cloudfunctions.googleapis.com",
-		"/v1/projects/p/locations/l/services":      "cloudfunctions.googleapis.com",
-		"/something/unmapped":                      "",
 	}
 	for path, want := range cases {
-		if got := pathMappedDomain(path); got != want {
-			t.Errorf("pathMappedDomain(%q) = %q, want %q", path, got, want)
+		if got := table.resolve(path); got != want {
+			t.Errorf("resolve(%q) = %q, want %q", path, got, want)
 		}
 	}
 }

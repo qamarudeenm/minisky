@@ -25,6 +25,10 @@ func init() {
 	}
 	registry.Register("bigtableadmin.googleapis.com", f)
 	registry.Register("bigtable.googleapis.com", f)
+
+	registry.RegisterRoutes("bigtableadmin.googleapis.com",
+		"/v2/projects/*/instances",
+	)
 }
 
 // Instance mirrors the Bigtable Instance resource.

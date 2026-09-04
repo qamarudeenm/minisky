@@ -18,6 +18,11 @@ func init() {
 	registry.Register("secretmanager.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI(ctx.SvcMgr, nil)
 	})
+
+	registry.RegisterRoutes("secretmanager.googleapis.com",
+		"/v1/projects/*/secrets",
+		"/v1beta1/projects/*/secrets",
+	)
 }
 
 // ---------------------------------------------------------------------------

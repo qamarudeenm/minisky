@@ -16,6 +16,10 @@ func init() {
 	registry.Register("dns.googleapis.com", func(ctx *registry.Context) http.Handler {
 		return NewAPI()
 	})
+
+	registry.RegisterRoutes("dns.googleapis.com",
+		"/dns/v1",
+	)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

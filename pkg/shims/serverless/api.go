@@ -30,6 +30,19 @@ func init() {
 	}
 	registry.Register("cloudfunctions.googleapis.com", f)
 	registry.Register("run.googleapis.com", f)
+
+	registry.RegisterRoutes("cloudfunctions.googleapis.com",
+		"/v2/projects/*/locations/*/functions",
+	)
+	registry.RegisterRoutes("run.googleapis.com",
+		"/v2/projects/*/locations/*/services",
+		"/v2/projects/*/locations/*/jobs",
+		"/v2/projects/*/locations/*/operations",
+		"/apis/serving.knative.dev",
+	)
+
+	registry.RegisterOperationKinds("cloudfunctions.googleapis.com", "cloudfunctions#operation")
+	registry.RegisterOperationKinds("run.googleapis.com", "run#operation")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
