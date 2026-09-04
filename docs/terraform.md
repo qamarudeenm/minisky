@@ -32,6 +32,18 @@ provider "google" {
   big_query_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/bigquery/v2/" : null
   cloud_run_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/v2/" : null
   firestore_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+
+  # Services whose API paths already begin with the version take the bare
+  # gateway. These became reachable in v1.4.3, when the router started
+  # identifying services by URL pattern rather than a handful of prefixes.
+  sql_custom_endpoint              = var.gcp_environment == "local" ? "http://localhost:8080/sql/v1beta4/" : null
+  dns_custom_endpoint              = var.gcp_environment == "local" ? "http://localhost:8080/dns/v1/" : null
+  iam_custom_endpoint              = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+  secret_manager_custom_endpoint   = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+  kms_custom_endpoint              = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+  container_custom_endpoint        = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+  artifact_registry_custom_endpoint = var.gcp_environment == "local" ? "http://localhost:8080/" : null
+  monitoring_custom_endpoint       = var.gcp_environment == "local" ? "http://localhost:8080/" : null
 }
 ```
 

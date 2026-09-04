@@ -58,6 +58,13 @@ docs/*
 !docs/contribution-guide.md
 !docs/changelog.md
 !docs/cli_reference.md
+!docs/architecture.md
+!docs/service-catalog.md
+!docs/network-firewall.md
+!docs/event_triggers.md
+!docs/images_management.md
+!docs/adding-a-service.md
+!docs/analytics-pipeline-tutorial.html
 !docs/analytics-pipeline-tutorial.html
 
 
