@@ -12,6 +12,8 @@ builds:
   - id: linux
     main: ./cmd/minisky
     binary: minisky
+    ldflags:
+      - -s -w -X minisky/pkg/version.Version={{.Version}}
     env: [CGO_ENABLED=1]
     goos: [linux]
     goarch: [amd64]
@@ -19,6 +21,8 @@ builds:
   - id: darwin
     main: ./cmd/minisky
     binary: minisky
+    ldflags:
+      - -s -w -X minisky/pkg/version.Version={{.Version}}
     env: [CGO_ENABLED=0]
     goos: [darwin]
     goarch: [arm64]
@@ -26,6 +30,8 @@ builds:
   - id: windows
     main: ./cmd/minisky
     binary: minisky
+    ldflags:
+      - -s -w -X minisky/pkg/version.Version={{.Version}}
     env: [CGO_ENABLED=0]
     goos: [windows]
     goarch: [amd64]
