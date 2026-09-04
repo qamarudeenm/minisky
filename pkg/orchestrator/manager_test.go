@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeTransport routes requests to a handler so tests can fake the Docker
@@ -601,5 +604,68 @@ func TestProvisionComputeVM_GivesVMsARouteToTheHost(t *testing.T) {
 
 	if !strings.Contains(createBody, "host.docker.internal:host-gateway") {
 		t.Errorf("container create carries no host-gateway mapping: %s", createBody)
+	}
+}
+
+// A published container port is bound by Docker before the process inside
+// starts listening, so an open socket says nothing about readiness. The probe
+// has to see an HTTP response, or the first request through the proxy dies with
+// EOF on every cold start.
+func TestWaitUntilReadyRequiresAnHTTPResponse(t *testing.T) {
+	// A listener that accepts and then closes, exactly like Docker's port proxy
+	// in front of an emulator that has not booted yet.
+	silent, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer silent.Close()
+	go func() {
+		for {
+			conn, err := silent.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	sm := NewServiceManagerForTesting(&fakeTransport{})
+	start := time.Now()
+	err = sm.waitUntilReady(silent.Addr().String(), 1500*time.Millisecond)
+	if err == nil {
+		t.Error("an accept-then-close listener was reported ready; the probe is still socket-only")
+	}
+	if time.Since(start) < 500*time.Millisecond {
+		t.Error("the probe returned immediately, so it cannot have retried")
+	}
+}
+
+func TestWaitUntilReadyAcceptsAnyHTTPStatus(t *testing.T) {
+	// Emulators answer / with whatever they like — fake-gcs-server 404s. The
+	// point is that something parsed the request.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	sm := NewServiceManagerForTesting(&fakeTransport{})
+	addr := strings.TrimPrefix(server.URL, "http://")
+	if err := sm.waitUntilReady(addr, 3*time.Second); err != nil {
+		t.Errorf("a 404 means the emulator is serving, got error: %v", err)
+	}
+}
+
+func TestWaitUntilReadyFailsWhenNothingListens(t *testing.T) {
+	// Bind and immediately release, so the port is almost certainly free.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := probe.Addr().String()
+	probe.Close()
+
+	sm := NewServiceManagerForTesting(&fakeTransport{})
+	if err := sm.waitUntilReady(addr, 900*time.Millisecond); err == nil {
+		t.Error("expected a failure when nothing is listening at all")
 	}
 }

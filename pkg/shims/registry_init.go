@@ -45,4 +45,23 @@ func init() {
 		"/v1/projects/*/instances",
 		"/v1/projects/*/instanceConfigs",
 	)
+
+	registry.RegisterRoutes("firestore.googleapis.com",
+		"/v1/projects/*/databases",
+	)
+
+	// Datastore puts its custom methods on the project itself, as
+	// /v1/projects/{projectId}:runQuery, so each verb is named explicitly.
+	// "/v1/projects/*" would match, but it would also swallow every other
+	// service sharing that prefix.
+	registry.RegisterRoutes("datastore.googleapis.com",
+		"/v1/projects/*:runQuery",
+		"/v1/projects/*:runAggregationQuery",
+		"/v1/projects/*:lookup",
+		"/v1/projects/*:commit",
+		"/v1/projects/*:beginTransaction",
+		"/v1/projects/*:rollback",
+		"/v1/projects/*:allocateIds",
+		"/v1/projects/*:reserveIds",
+	)
 }

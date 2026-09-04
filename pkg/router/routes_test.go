@@ -191,3 +191,33 @@ func TestOperationResolutionDeclinesWhatItCannotAttribute(t *testing.T) {
 		t.Errorf("without an operation manager, got %q, want empty", got)
 	}
 }
+
+// Datastore addresses a project with a custom method — /v1/projects/{id}:runQuery
+// — so the pattern has to match the verb rather than claim "/v1/projects/*",
+// which would swallow every other service sharing that prefix.
+func TestCustomMethodOnTheProjectSegment(t *testing.T) {
+	table := newRouteTable(map[string][]string{
+		"datastore.googleapis.com": {
+			"/v1/projects/*:runQuery",
+			"/v1/projects/*:commit",
+		},
+		"secretmanager.googleapis.com": {"/v1/projects/*/secrets"},
+		"firestore.googleapis.com":     {"/v1/projects/*/databases"},
+	})
+
+	cases := map[string]string{
+		"/v1/projects/my-app:runQuery":            "datastore.googleapis.com",
+		"/v1/projects/my-app:commit":              "datastore.googleapis.com",
+		"/v1/projects/my-app/secrets":             "secretmanager.googleapis.com",
+		"/v1/projects/my-app/databases/(default)": "firestore.googleapis.com",
+		// A verb nobody declared must not fall to a neighbour.
+		"/v1/projects/my-app:export": "",
+		// The bare project is not Datastore's either.
+		"/v1/projects/my-app": "",
+	}
+	for path, want := range cases {
+		if got := table.resolve(path); got != want {
+			t.Errorf("resolve(%q) = %q, want %q", path, got, want)
+		}
+	}
+}

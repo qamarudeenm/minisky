@@ -142,3 +142,21 @@ func TestVertexGenerativePathIsRouted(t *testing.T) {
 		t.Errorf("generateContent resolved to %q, want aiplatform.googleapis.com", got)
 	}
 }
+
+// Firestore and Datastore are Docker-backed, so they need routes like any other
+// service — a client reaching them through the gateway sends no hostname.
+func TestDockerBackedServicesAreRouted(t *testing.T) {
+	table := newRouteTable(registry.Routes())
+
+	cases := map[string]string{
+		"/v1/projects/p/databases/(default)/documents": "firestore.googleapis.com",
+		"/v1/projects/p:runQuery":                      "datastore.googleapis.com",
+		"/v1/projects/p:commit":                        "datastore.googleapis.com",
+		"/v1/projects/p/instances":                     "spanner.googleapis.com",
+	}
+	for path, want := range cases {
+		if got := table.resolve(path); got != want {
+			t.Errorf("resolve(%q) = %q, want %q", path, got, want)
+		}
+	}
+}

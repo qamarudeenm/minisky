@@ -158,6 +158,16 @@ func matchPrefix(glob, path []string) bool {
 		if seg == "*" {
 			continue
 		}
+		// A "*:verb" segment matches any resource carrying that custom method,
+		// which is how Datastore addresses a project: /v1/projects/{id}:runQuery.
+		// Without this the only pattern that would match is "/v1/projects/*",
+		// which is broad enough to capture every other service on the prefix.
+		if verb, ok := strings.CutPrefix(seg, "*:"); ok {
+			if !strings.HasSuffix(path[i], ":"+verb) {
+				return false
+			}
+			continue
+		}
 		if seg != path[i] {
 			return false
 		}

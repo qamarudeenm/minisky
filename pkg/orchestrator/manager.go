@@ -1265,17 +1265,61 @@ func (sm *ServiceManager) startContainer(name string) error {
 	return nil
 }
 
+// tcpOnlyReadinessGrace is how long the probe insists on an application-level
+// response before it settles for an open socket. It covers backends that speak
+// only gRPC and will never answer an HTTP/1.1 request, without masking the much
+// commoner case of an HTTP emulator that simply has not finished booting.
+const tcpOnlyReadinessGrace = 20 * time.Second
+
+// waitUntilReady blocks until the emulator at addr is actually serving.
+//
+// A TCP dial alone cannot tell: addr is a published container port, and Docker
+// binds it the moment the container starts, well before the process inside is
+// listening. The dial therefore succeeded instantly on a cold start, the
+// service was declared ONLINE, and the first request through the proxy died
+// with "EOF" — twice in a row, in practice, until the emulator caught up.
+//
+// So the socket only gets us to the door: readiness means an HTTP response
+// came back. Any status counts, including 404 — the point is that something
+// on the other end parsed a request and answered it.
 func (sm *ServiceManager) waitUntilReady(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	graceEnds := time.Now().Add(tcpOnlyReadinessGrace)
+
+	probe := &http.Client{
+		Timeout: 2 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	var lastErr error
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err != nil {
+			lastErr = err
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		conn.Close()
+
+		resp, err := probe.Get("http://" + addr + "/")
 		if err == nil {
-			conn.Close()
+			resp.Body.Close()
+			return nil
+		}
+		lastErr = err
+
+		// A gRPC-only emulator never answers this, so accept the open socket
+		// once the grace period has passed rather than failing the cold start.
+		if time.Now().After(graceEnds) {
+			log.Printf("[Orchestrator] '%s' accepted connections but never answered HTTP; "+
+				"treating the open socket as ready (%v)", addr, err)
 			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return fmt.Errorf("'%s' not reachable after %s", addr, timeout)
+	return fmt.Errorf("'%s' not serving after %s: %v", addr, timeout, lastErr)
 }
 
 // resolveDockerSocket and dialDocker are implemented in OS-specific files (dialer_unix.go, dialer_windows.go)
