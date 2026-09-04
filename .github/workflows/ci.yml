@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Linux is what the release binary is built from, so it is the one that must
+  # be green. CGO is on because BigQuery runs on an embedded DuckDB, and
+  # without it every query quietly returns zero rows.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: CGO_ENABLED=1 go build ./...
+
+      - name: Test
+        run: CGO_ENABLED=1 go test ./pkg/...
+
+      - name: Check formatting of changed packages
+        run: |
+          # The tree has pre-existing formatting drift, so this reports rather
+          # than fails — it exists to stop new drift going unnoticed.
+          gofmt -l pkg cmd || true
+
+  # macOS exists to answer one question: does BigQuery actually execute SQL on
+  # Apple Silicon? The released darwin binary is built without CGO today, so it
+  # falls back to a mock that returns zero rows for every query — with no error,
+  # which is the worst way for it to fail. This job is the validation that
+  # cannot be done by cross-compiling.
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build with CGO
+        run: CGO_ENABLED=1 go build ./cmd/minisky
+
+      - name: Prove DuckDB executes SQL on darwin/arm64
+        run: CGO_ENABLED=1 go test ./pkg/shims/bigquery/ -run TestDuckDBBackendExecutesRealSQL -v
+
+      - name: Test
+        run: CGO_ENABLED=1 go test ./pkg/...
+
+      - name: Report the version the binary claims
+        run: |
+          go build -ldflags "-X minisky/pkg/version.Version=ci-check" -o minisky-ci ./cmd/minisky
+          ./minisky-ci version | tail -1
