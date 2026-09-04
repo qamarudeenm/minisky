@@ -27,6 +27,10 @@ func (api *API) restore() {
 		return
 	}
 	for name, job := range stored.Jobs {
+		// Names are canonicalised on the way in, so state written before that
+		// fix is keyed by the URL form and would never be found again.
+		name = canonicalJobName(name)
+		job.Name = name
 		api.jobs[name] = job
 		// scheduleJobLocked skips anything not ENABLED, which is what a paused
 		// job should keep doing after a restart.

@@ -35,7 +35,7 @@ func TestRestoredJobIsRescheduled(t *testing.T) {
 	isolate(t)
 
 	const collection = "/v1/projects/probe/locations/us-central1/jobs"
-	const name = collection + "/nightly"
+	const name = "projects/probe/locations/us-central1/jobs/nightly"
 
 	api := NewAPI(nil)
 	code, _ := call(t, api, http.MethodPost, collection,
@@ -46,7 +46,7 @@ func TestRestoredJobIsRescheduled(t *testing.T) {
 	}
 
 	restarted := NewAPI(nil)
-	code, job := call(t, restarted, http.MethodGet, name, "")
+	code, job := call(t, restarted, http.MethodGet, collection+"/nightly", "")
 	if code != http.StatusOK {
 		t.Fatalf("GET job after restart = %d, want 200", code)
 	}
@@ -68,13 +68,13 @@ func TestRestoredPausedJobIsNotRescheduled(t *testing.T) {
 	isolate(t)
 
 	const collection = "/v1/projects/probe/locations/us-central1/jobs"
-	const name = collection + "/nightly"
+	const name = "projects/probe/locations/us-central1/jobs/nightly"
 
 	api := NewAPI(nil)
 	call(t, api, http.MethodPost, collection,
 		`{"name":"nightly","schedule":"0 2 * * *",
 		  "httpTarget":{"uri":"http://localhost:1/noop","httpMethod":"GET"}}`)
-	if code, _ := call(t, api, http.MethodPost, name+":pause", ""); code != http.StatusOK {
+	if code, _ := call(t, api, http.MethodPost, collection+"/nightly:pause", ""); code != http.StatusOK {
 		t.Fatalf("pause = %d, want 200", code)
 	}
 
@@ -86,7 +86,7 @@ func TestRestoredPausedJobIsNotRescheduled(t *testing.T) {
 		t.Error("a paused job was put back on the cron by the restart")
 	}
 
-	code, job := call(t, restarted, http.MethodGet, name, "")
+	code, job := call(t, restarted, http.MethodGet, collection+"/nightly", "")
 	if code != http.StatusOK {
 		t.Fatalf("GET job after restart = %d, want 200", code)
 	}

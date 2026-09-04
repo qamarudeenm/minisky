@@ -95,6 +95,7 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle REST API
 	// v2/projects/{project}/locations/{location}/queues
 	if len(parts) >= 6 && parts[0] == "v2" && parts[3] == "locations" && parts[5] == "queues" {
+		location := parts[4]
 		queueId := ""
 		if len(parts) >= 7 {
 			queueId = parts[6]
@@ -103,7 +104,7 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case len(parts) == 6:
 			if r.Method == http.MethodGet {
-				api.listQueues(w, r, project)
+				api.listQueues(w, r, project, location)
 				return
 			}
 			if r.Method == http.MethodPost {
@@ -111,23 +112,27 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case len(parts) == 7:
+			if r.Method == http.MethodGet {
+				api.getQueue(w, project, location, queueId)
+				return
+			}
 			if r.Method == http.MethodDelete {
-				api.deleteQueue(w, r, project, queueId)
+				api.deleteQueue(w, r, project, location, queueId)
 				return
 			}
 		case len(parts) >= 8 && parts[7] == "tasks":
 			if len(parts) == 8 {
 				if r.Method == http.MethodGet {
-					api.listTasks(w, r, project, queueId)
+					api.listTasks(w, r, project, location, queueId)
 					return
 				}
 				if r.Method == http.MethodPost {
-					api.createTask(w, r, project, queueId)
+					api.createTask(w, r, project, location, queueId)
 					return
 				}
 			} else if len(parts) == 9 {
 				if r.Method == http.MethodDelete {
-					api.deleteTask(w, r, project, queueId, parts[8])
+					api.deleteTask(w, r, project, location, queueId, parts[8])
 					return
 				}
 			}
@@ -138,12 +143,38 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 }
 
-func (api *API) listQueues(w http.ResponseWriter, r *http.Request, project string) {
+// queueName is the canonical resource name of a queue. Every lookup used to
+// build this with the location hardcoded to us-central1 while createQueue keyed
+// by the name the client sent, so a queue in any other region could be created
+// and then never read, listed or deleted.
+func queueName(project, location, queueId string) string {
+	return fmt.Sprintf("projects/%s/locations/%s/queues/%s", project, location, queueId)
+}
+
+// getQueue serves queues.get, which is how a client — Terraform included —
+// reads a queue back after creating it.
+func (api *API) getQueue(w http.ResponseWriter, project, location, queueId string) {
+	name := queueName(project, location, queueId)
+
+	api.mu.RLock()
+	q, ok := api.queues[name]
+	api.mu.RUnlock()
+
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"code":404,"message":"Queue does not exist."}}`))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(q)
+}
+
+func (api *API) listQueues(w http.ResponseWriter, r *http.Request, project, location string) {
 	api.mu.RLock()
 	defer api.mu.RUnlock()
 
 	var result []*Queue
-	prefix := fmt.Sprintf("projects/%s/locations/us-central1/queues/", project)
+	prefix := fmt.Sprintf("projects/%s/locations/%s/queues/", project, location)
 	for name, q := range api.queues {
 		if strings.HasPrefix(name, prefix) {
 			result = append(result, q)
@@ -176,8 +207,8 @@ func (api *API) createQueue(w http.ResponseWriter, r *http.Request, project stri
 	json.NewEncoder(w).Encode(q)
 }
 
-func (api *API) deleteQueue(w http.ResponseWriter, r *http.Request, project, queueId string) {
-	name := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
+func (api *API) deleteQueue(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
+	name := queueName(project, location, queueId)
 	log.Printf("[Shim: Cloud Tasks] Attempting to delete queue: %s", name)
 	
 	api.mu.Lock()
@@ -194,8 +225,8 @@ func (api *API) deleteQueue(w http.ResponseWriter, r *http.Request, project, que
 	w.WriteHeader(http.StatusOK)
 }
 
-func (api *API) listTasks(w http.ResponseWriter, r *http.Request, project, queueId string) {
-	name := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
+func (api *API) listTasks(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
+	name := queueName(project, location, queueId)
 	
 	api.mu.RLock()
 	tasks := api.tasks[name]
@@ -207,7 +238,7 @@ func (api *API) listTasks(w http.ResponseWriter, r *http.Request, project, queue
 	json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks})
 }
 
-func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, queueId string) {
+func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, location, queueId string) {
 	var body struct {
 		Task *Task `json:"task"`
 	}
@@ -216,8 +247,8 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, queu
 		return
 	}
 
-	queueName := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
-	
+	queue := queueName(project, location, queueId)
+
 	task := body.Task
 	if task == nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -225,20 +256,20 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request, project, queu
 	}
 
 	if task.Name == "" {
-		task.Name = fmt.Sprintf("%s/tasks/%d", queueName, time.Now().UnixNano())
+		task.Name = fmt.Sprintf("%s/tasks/%d", queue, time.Now().UnixNano())
 	}
 	task.CreateTime = time.Now().Format(time.RFC3339)
 	task.Status = "PENDING"
 
 	api.mu.Lock()
-	api.tasks[queueName] = append(api.tasks[queueName], task)
+	api.tasks[queue] = append(api.tasks[queue], task)
 	api.mu.Unlock()
 
-	api.pushLog(project, "INFO", queueName, "Task created: "+task.Name)
+	api.pushLog(project, "INFO", queue, "Task created: "+task.Name)
 	
 	// Background: Simulate task execution if it's an HTTP task
 	if task.HTTPRequest != nil {
-		go api.executeTask(project, queueName, task)
+		go api.executeTask(project, queue, task)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -266,20 +297,20 @@ func (api *API) executeTask(project, queueName string, task *Task) {
 	api.mu.Unlock()
 }
 
-func (api *API) deleteTask(w http.ResponseWriter, r *http.Request, project, queueId, taskId string) {
-	queueName := fmt.Sprintf("projects/%s/locations/us-central1/queues/%s", project, queueId)
-	taskName := fmt.Sprintf("%s/tasks/%s", queueName, taskId)
+func (api *API) deleteTask(w http.ResponseWriter, r *http.Request, project, location, queueId, taskId string) {
+	queue := queueName(project, location, queueId)
+	taskName := fmt.Sprintf("%s/tasks/%s", queue, taskId)
 	log.Printf("[Shim: Cloud Tasks] Attempting to delete task: %s", taskName)
 
 	api.mu.Lock()
 	defer api.mu.Unlock()
 
-	tasks := api.tasks[queueName]
+	tasks := api.tasks[queue]
 	for i, t := range tasks {
 		if t.Name == taskName {
-			api.tasks[queueName] = append(tasks[:i], tasks[i+1:]...)
+			api.tasks[queue] = append(tasks[:i], tasks[i+1:]...)
 			log.Printf("[Shim: Cloud Tasks] Successfully deleted task: %s", taskName)
-			api.pushLog(project, "INFO", queueName, "Task deleted: "+taskName)
+			api.pushLog(project, "INFO", queue, "Task deleted: "+taskName)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
