@@ -70,13 +70,15 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManager, logAPI *logging.API) *API {
-	return &API{
+	api := &API{
 		opMgr:             opMgr,
 		svcMgr:            sm,
 		logAPI:            logAPI,
 		redisInstances:    make(map[string]map[string]*Instance),
 		memcacheInstances: make(map[string]map[string]*Instance),
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) pushLog(projectId, severity, service, text string) {
@@ -87,6 +89,8 @@ func (api *API) pushLog(projectId, severity, service, text string) {
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Memorystore] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 

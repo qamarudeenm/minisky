@@ -66,7 +66,9 @@ type API struct {
 }
 
 func NewAPI() *API {
-	return &API{store: make(map[string]map[string]*KeyRing)}
+	api := &API{store: make(map[string]map[string]*KeyRing)}
+	api.restore()
+	return api
 }
 
 func (api *API) OnPostBoot(ctx *registry.Context) {
@@ -112,6 +114,8 @@ func jsonErr(w http.ResponseWriter, code int, msg string) {
 //   projects/{p}/locations/{loc}/keyRings/{kr}/cryptoKeys/{ck}/cryptoKeyVersions/{v}:destroy
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Cloud KMS] %s %s", r.Method, r.URL.Path)
 	path := strings.TrimPrefix(r.URL.Path, "/v1")
 	path = strings.Trim(path, "/")

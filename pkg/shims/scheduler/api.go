@@ -95,6 +95,7 @@ func NewAPI(logAPI *logging.API) *API {
 		logAPI:  logAPI,
 	}
 	api.cron.Start()
+	api.restore()
 	return api
 }
 
@@ -106,6 +107,8 @@ func (api *API) pushLog(projectId, severity, jobId, text string) {
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Cloud Scheduler] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 

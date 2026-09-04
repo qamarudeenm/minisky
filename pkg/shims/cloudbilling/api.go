@@ -58,15 +58,19 @@ type API struct {
 }
 
 func NewAPI() *API {
-	return &API{
+	api := &API{
 		linked: map[string]string{},
 		accounts: map[string]*BillingAccount{
 			defaultAccount: {Name: defaultAccount, Open: true, DisplayName: "MiniSky Local Billing"},
 		},
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	log.Printf("[Shim: CloudBilling] %s %s", r.Method, path)
 	w.Header().Set("Content-Type", "application/json")

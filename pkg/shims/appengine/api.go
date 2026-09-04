@@ -94,7 +94,7 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManager, serverless *serverless.API, logAPI *logging.API) *API {
-	return &API{
+	api := &API{
 		opMgr:      opMgr,
 		svcMgr:     sm,
 		serverless: serverless,
@@ -103,6 +103,8 @@ func NewAPI(opMgr *orchestrator.OperationManager, sm *orchestrator.ServiceManage
 		services:   make(map[string]map[string]*Service),
 		versions:   make(map[string]map[string]map[string]*Version),
 	}
+	api.restore()
+	return api
 }
 
 // pushLog emits a structured log entry to Cloud Logging (no-op if logAPI is nil)
@@ -115,6 +117,8 @@ func (api *API) pushLog(projectId, severity, service, text string) {
 
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: AppEngine] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -381,7 +385,7 @@ func (api *API) handleDirectDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	api.mu.Unlock()
 
-	api.opMgr.RunAsync(op.Name, func() error {
+	api.runAndPersist(op.Name, func() error {
 		// Leverage Serverless Backend
 		if api.serverless == nil { return fmt.Errorf("serverless backend not initialized") }
 		backend := api.serverless.GetBackend()

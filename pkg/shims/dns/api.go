@@ -99,9 +99,11 @@ type API struct {
 }
 
 func NewAPI() *API {
-	return &API{
+	api := &API{
 		zones: make(map[string]*zoneStore),
 	}
+	api.restore()
+	return api
 }
 
 // ServeHTTP dispatches Cloud DNS v1 paths.
@@ -119,6 +121,8 @@ func NewAPI() *API {
 //   GET    /dns/v1/projects/{project}/managedZones/{zone}/changes
 //   GET    /dns/v1/projects/{project}/managedZones/{zone}/changes/{changeId}
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Cloud DNS] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 

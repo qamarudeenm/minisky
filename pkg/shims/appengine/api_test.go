@@ -10,7 +10,14 @@ import (
 	"minisky/pkg/orchestrator"
 )
 
-func newTestAPI() *API {
+// newTestAPI builds a shim over a temporary home. Construction loads persisted
+// state, so without this a test would read — and overwrite — the applications
+// in the developer's real ~/.minisky.
+func newTestAPI(t *testing.T) *API {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	return NewAPI(orchestrator.NewOperationManager(), nil, nil, nil)
 }
 
@@ -65,7 +72,7 @@ func TestIsApplicationPath(t *testing.T) {
 // Getting an application by id used to fall through to a blanket 404, because
 // the dispatch only matched a path ending in "/apps".
 func TestGetApplicationByID(t *testing.T) {
-	api := newTestAPI()
+	api := newTestAPI(t)
 
 	code, body := do(t, api, http.MethodGet, "/v1/apps/my-project", "")
 	if code != http.StatusOK {
@@ -82,7 +89,7 @@ func TestGetApplicationByID(t *testing.T) {
 // There is no list method, and auto-creating for an empty id would leave a
 // nameless application in state.
 func TestGetApplicationWithoutIDIsRejected(t *testing.T) {
-	api := newTestAPI()
+	api := newTestAPI(t)
 
 	code, body := do(t, api, http.MethodGet, "/v1/apps", "")
 	if code != http.StatusBadRequest {
@@ -102,7 +109,7 @@ func TestGetApplicationWithoutIDIsRejected(t *testing.T) {
 
 // apps.create previously answered 200 with an empty body and created nothing.
 func TestCreateApplicationReturnsAnOperation(t *testing.T) {
-	api := newTestAPI()
+	api := newTestAPI(t)
 
 	code, body := do(t, api, http.MethodPost, "/v1/apps",
 		`{"id":"new-project","locationId":"europe-west1"}`)
@@ -127,7 +134,7 @@ func TestCreateApplicationReturnsAnOperation(t *testing.T) {
 }
 
 func TestCreateApplicationRejectsDuplicateAndMissingID(t *testing.T) {
-	api := newTestAPI()
+	api := newTestAPI(t)
 
 	if code, _ := do(t, api, http.MethodPost, "/v1/apps", `{"id":"dup"}`); code != http.StatusOK {
 		t.Fatalf("first create = %d, want 200", code)
@@ -147,7 +154,7 @@ func TestCreateApplicationRejectsDuplicateAndMissingID(t *testing.T) {
 
 // Resources beneath the application must keep reaching their own handlers.
 func TestNestedResourcesStillRoute(t *testing.T) {
-	api := newTestAPI()
+	api := newTestAPI(t)
 
 	if code, _ := do(t, api, http.MethodGet, "/v1/apps/my-project/services", ""); code == http.StatusBadRequest {
 		t.Error("services was handled as an application path")

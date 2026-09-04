@@ -51,10 +51,12 @@ type API struct {
 }
 
 func NewAPI() *API {
-	return &API{
+	api := &API{
 		queues: make(map[string]*Queue),
 		tasks:  make(map[string][]*Task),
 	}
+	api.restore()
+	return api
 }
 
 func (api *API) OnPostBoot(ctx *registry.Context) {
@@ -71,6 +73,8 @@ func (api *API) pushLog(projectId, severity, resourceName, text string) {
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 
 	path := strings.Trim(r.URL.Path, "/")
 	parts := strings.Split(path, "/")

@@ -10,6 +10,7 @@ package persist
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -85,4 +86,18 @@ func Save(name string, v any) error {
 		return fmt.Errorf("replace %s: %w", path, err)
 	}
 	return nil
+}
+
+// Mutating reports whether a request could have changed a shim's state, and so
+// whether it is worth taking a snapshot afterwards.
+//
+// A few read-only APIs are addressed with POST — `:getIamPolicy`,
+// `entries:list`, query submission — so this errs towards saving. Writing a
+// snapshot identical to the last one is cheap; missing a write is not.
+func Mutating(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	return true
 }

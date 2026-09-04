@@ -130,13 +130,15 @@ type API struct {
 }
 
 func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceManager) *API {
-	return &API{
+	api := &API{
 		opMgr:     opMgr,
 		svcMgr:    svcMgr,
 		instances: make(map[string]*DatabaseInstance),
 		databases: make(map[string][]*Database),
 		users:     make(map[string][]*User),
 	}
+	api.restore()
+	return api
 }
 
 // ServeHTTP dispatches Cloud SQL v1 paths.
@@ -152,6 +154,8 @@ func NewAPI(opMgr *orchestrator.OperationManager, svcMgr *orchestrator.ServiceMa
 //   GET    /v1/projects/{project}/instances/{instance}/users
 //   GET    /v1/projects/{project}/operations/{operation}
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer api.persistIfMutated(r)
+
 	log.Printf("[Shim: Cloud SQL] %s %s", r.Method, r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 
