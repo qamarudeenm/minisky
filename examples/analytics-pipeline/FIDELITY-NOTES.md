@@ -361,9 +361,18 @@ Covered by `TestRegistrySurvivesARestart`, `TestDatasetMetadataSurvivesARestart`
 `TestFirewallRuleIsReregisteredAfterARestart`, `TestInstanceStatusIsReconciledAgainstDocker`,
 `TestServiceAccountSurvivesARestart` and `TestPolicySurvivesARestart`.
 
-Still process-lifetime only: App Engine, Artifact Registry, Bigtable, Cloud Billing, Cloud KMS,
+Every other shim followed: App Engine, Artifact Registry, Bigtable, Cloud Billing, Cloud KMS,
 Cloud SQL, Cloud Tasks, Dataproc, Cloud DNS, GKE, Memorystore, Cloud Scheduler, Secret Manager and
-the serverless shim.
+the serverless shim. Three of those lose more than a record when forgotten — a Cloud KMS key ring
+takes every ciphertext written under it, a secret's payload exists nowhere else, and a scheduler job
+restored without its cron entry reads back as `ENABLED` while never firing again — so KMS persists
+its key material, Secret Manager its payloads, and the scheduler re-arms the cron on load.
+
+A separate and larger problem sat underneath all of this: MiniSky removes its emulator containers on
+shutdown, and fake-gcs-server had no volume, so a restart destroyed the buckets **and every object
+in them** rather than merely resetting their metadata. Cloud Storage now keeps its data in a named
+Docker volume. The remaining emulators — Pub/Sub, Firestore, Bigtable and Spanner — are in-memory by
+design and have no data directory to mount.
 
 ---
 
