@@ -35,7 +35,8 @@ type routeRule struct {
 	domain   string
 	glob     string
 	segments []string
-	literals int // non-wildcard segments; drives specificity
+	literals int  // non-wildcard segments; drives specificity
+	exact    bool // the path must end here, rather than the subtree being claimed
 }
 
 // routeTable resolves a URL path to a service domain.
@@ -69,6 +70,13 @@ func newRouteTable(declared map[string][]string) *routeTable {
 			}
 			seen[trimmed] = domain
 
+			// A trailing "$" claims exactly this path and nothing beneath it.
+			// Resource Manager needs it: it owns /v1/projects/{id} while
+			// /v1/projects/{id}/secrets belongs to Secret Manager, so a prefix
+			// pattern there would swallow half the gateway.
+			exact := strings.HasSuffix(trimmed, "$")
+			trimmed = strings.TrimSuffix(trimmed, "$")
+
 			segments := strings.Split(trimmed, "/")
 			literals := 0
 			for _, seg := range segments {
@@ -81,6 +89,7 @@ func newRouteTable(declared map[string][]string) *routeTable {
 				glob:     "/" + trimmed,
 				segments: segments,
 				literals: literals,
+				exact:    exact,
 			})
 		}
 	}
@@ -111,6 +120,9 @@ func (t *routeTable) resolve(path string) string {
 		return ""
 	}
 	for i := range t.rules {
+		if t.rules[i].exact && len(t.rules[i].segments) != len(segments) {
+			continue
+		}
 		if matchPrefix(t.rules[i].segments, segments) {
 			return t.rules[i].domain
 		}

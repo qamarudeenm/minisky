@@ -1,6 +1,7 @@
 package router
 
 import (
+	"strings"
 	"testing"
 
 	"minisky/pkg/registry"
@@ -61,17 +62,42 @@ func TestDeclaredRoutesResolveProbedPaths(t *testing.T) {
 	}
 }
 
-// Resource Manager is not built yet, so its paths must stay unrouted rather than
-// being swallowed by a neighbour — a wrong 200 would be worse than a 501.
-func TestResourceManagerPathsAreStillUnclaimed(t *testing.T) {
+// Resource Manager owns the hierarchy, but only the hierarchy: it claims a
+// project itself while everything beneath a project belongs to the service that
+// resource comes from.
+func TestResourceManagerClaimsTheHierarchyOnly(t *testing.T) {
 	table := newRouteTable(registry.Routes())
 
-	for _, path := range []string{
-		"/v3/folders?parent=organizations/1",
-		"/v1/organizations",
-	} {
-		if got := table.resolve(path); got != "" {
-			t.Errorf("resolve(%q) = %q, want no owner until the shim exists", path, got)
+	owned := map[string]string{
+		"/v3/folders":                      "cloudresourcemanager.googleapis.com",
+		"/v3/folders/123456789012":         "cloudresourcemanager.googleapis.com",
+		"/v3/folders/123456789012:move":    "cloudresourcemanager.googleapis.com",
+		"/v1/organizations/100000000000":   "cloudresourcemanager.googleapis.com",
+		"/v3/organizations:search":         "cloudresourcemanager.googleapis.com",
+		"/v1/projects":                     "cloudresourcemanager.googleapis.com",
+		"/v1/projects/my-app":              "cloudresourcemanager.googleapis.com",
+		"/v1/projects/my-app:setIamPolicy": "cloudresourcemanager.googleapis.com",
+		"/v3/projects/123456789012":        "cloudresourcemanager.googleapis.com",
+	}
+	for path, want := range owned {
+		if got := table.resolve(path); got != want {
+			t.Errorf("resolve(%q) = %q, want %q", path, got, want)
+		}
+	}
+
+	// Anything below a project belongs to whoever owns that resource. A prefix
+	// claim on /v1/projects would have taken all of these.
+	notOwned := map[string]string{
+		"/v1/projects/my-app/secrets":                        "secretmanager.googleapis.com",
+		"/v1/projects/my-app/topics":                         "pubsub.googleapis.com",
+		"/v1/projects/my-app/serviceAccounts":                "iam.googleapis.com",
+		"/v1/projects/my-app/locations/us-central1/clusters": "container.googleapis.com",
+		"/v3/projects/my-app/timeSeries":                     "monitoring.googleapis.com",
+	}
+	for path, want := range notOwned {
+		if got := table.resolve(path); got != want {
+			t.Errorf("resolve(%q) = %q, want %q — Resource Manager must not claim the subtree",
+				path, got, want)
 		}
 	}
 }
@@ -81,9 +107,13 @@ func TestResourceManagerPathsAreStillUnclaimed(t *testing.T) {
 func TestNoDeclarationIsDangerouslyBroad(t *testing.T) {
 	for domain, globs := range registry.Routes() {
 		for _, glob := range globs {
+			if strings.HasSuffix(glob, "$") {
+				continue // an exact claim takes only that path, never the subtree
+			}
 			switch glob {
 			case "/v1/projects/*", "/v1/projects", "/v1", "/v2", "/v3", "/":
-				t.Errorf("%s declares %q, which would capture unrelated services", domain, glob)
+				t.Errorf("%s declares %q as a prefix, which would capture unrelated services; "+
+					"anchor it with a trailing $ if it should claim only that path", domain, glob)
 			}
 		}
 	}
