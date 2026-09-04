@@ -24,6 +24,10 @@ func init() {
 	})
 
 	registry.RegisterRoutes("aiplatform.googleapis.com",
+		// The generative surface: publishers/google/models/{model}:generateContent.
+		// This is the path the shim actually serves, translating to a local LLM
+		// provider — see docs/vertex-ai-local.md.
+		"/v1/projects/*/locations/*/publishers",
 		"/v1/projects/*/locations/*/models",
 		"/v1/projects/*/locations/*/endpoints",
 		"/v1/projects/*/locations/*/datasets",

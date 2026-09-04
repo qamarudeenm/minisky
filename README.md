@@ -18,6 +18,7 @@ MiniSky provides a seamless, professional-grade development environment that emu
 - **🚀 29+ GCP Services**: Compute Engine, GKE, Cloud SQL, BigQuery, Storage, Pub/Sub, IAM, Secret Manager, Cloud KMS, Artifact Registry, Bigtable, Vertex AI and more.
 - **🖥️ Embedded Dashboard**: Real-time observability and resource management via a premium web UI.
 - **🛠️ Works With Your Existing Tools**: Terraform, `gcloud` and the Google client libraries all reach it by changing an endpoint — see [Point Your Tools At It](#-point-your-tools-at-it).
+- **🧠 Vertex AI On Local Models**: `generateContent` is answered by a local LLM — Ollama by default, and configurable — so GenAI code paths run offline with no key and no spend.
 - **🔌 Dynamic Registry**: Modular plugin system for community-led service contributions.
 - **📦 Single Binary**: Developed entirely in Go. A single, ultra-lightweight binary where all services are lazy-loaded for maximum efficiency and sub-100ms startup times.
 
@@ -180,6 +181,26 @@ knowing when you are judging what a local run actually proves.
 So a `google_compute_instance` becomes a container named `minisky-vm-<name>` you can
 `docker exec` into, while a firewall rule or a secret is state and nothing more. BigQuery is the
 exception that proves the rule: state, but executed against an embedded DuckDB.
+
+## 🧠 Vertex AI Without A Cloud Key
+
+Calls to the Vertex AI generative endpoint are translated to a local model provider and back, so
+application code keeps using Google's request and response shapes.
+
+```bash
+# Point it at a model you have pulled (defaults to Ollama on :11434)
+curl -X POST http://localhost:8080/v1/internal/config \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"ollama","endpoint":"http://localhost:11434","model":"llama3.1:8b"}'
+
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"contents":[{"role":"user","parts":[{"text":"Summarise this release"}]}]}' \
+  "http://localhost:8080/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent"
+```
+
+The response comes back as a normal `GenerateContentResponse`, so swapping the endpoint back to
+Google is the only change needed to run the same code against a real model. Provider and model are
+set from the dashboard or the config endpoint above.
 
 ## 🖥️ Platform Compatibility
 

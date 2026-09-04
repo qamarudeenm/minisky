@@ -130,3 +130,15 @@ func TestSharedOperationsPathIsUnclaimed(t *testing.T) {
 		t.Errorf("zonal operations = %q, want container.googleapis.com", got)
 	}
 }
+
+// The Vertex AI shim serves the generative surface by translating to a local
+// LLM provider, and that path carries a "publishers" segment. Routing only
+// .../models would 501 the one endpoint the shim actually implements.
+func TestVertexGenerativePathIsRouted(t *testing.T) {
+	table := newRouteTable(registry.Routes())
+
+	const genai = "/v1/projects/p/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent"
+	if got := table.resolve(genai); got != "aiplatform.googleapis.com" {
+		t.Errorf("generateContent resolved to %q, want aiplatform.googleapis.com", got)
+	}
+}
