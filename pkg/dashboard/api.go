@@ -87,6 +87,8 @@ func NewAPIHandler(
 	// Add reverse proxy for management APIs
 	mux.Handle("/api/manage/storage/", api.handleManageStorage())
 	mux.Handle("/api/manage/iam/", api.handleManageIam())
+	mux.Handle("/api/manage/resourcemanager/", api.handleManagePassthrough("resourcemanager", "cloudresourcemanager.googleapis.com"))
+	mux.Handle("/api/manage/cloudbilling/", api.handleManagePassthrough("cloudbilling", "cloudbilling.googleapis.com"))
 	mux.Handle("/api/manage/compute/", api.handleManageCompute())
 	mux.Handle("/api/manage/dns/", api.handleManageDns())
 	mux.Handle("/api/manage/network/", api.handleManageNetwork())
@@ -203,6 +205,8 @@ func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
 		{ID: "sqladmin", Name: "cloud-sql", Label: "Cloud SQL", Status: sqlStatus, Port: nil, Description: "Postgres/MySQL docker container mapping"},
 		{ID: "serverless", Name: "cloud-functions", Label: "Cloud Functions & Run", Status: servStatus, Port: nil, Description: "Source to Image using GCP Buildpacks", MissingDeps: servDeps},
 		{ID: "dns", Name: "cloud-dns", Label: "Cloud DNS", Status: dnsStatus, Port: nil, Description: "Internal managed zone resolution"},
+		{ID: "resourcemanager", Name: "cloud-resource-manager", Label: "Resource Manager", Status: "RUNNING", Port: nil, Description: "Organizations, folders and projects — the hierarchy every other resource hangs from"},
+		{ID: "cloudbilling", Name: "cloud-billing", Label: "Cloud Billing", Status: "RUNNING", Port: nil, Description: "Billing accounts and the projects linked to them"},
 		{ID: "iam", Name: "cloud-iam", Label: "Cloud IAM", Status: iamStatus, Port: nil, Description: "Role binding & policy engine evaluation"},
 		{ID: "dataproc", Name: "cloud-dataproc", Label: "Cloud Dataproc", Status: dpStatus, Port: nil, Description: "Spark cluster emulation & LRO tracking"},
 		{ID: "bigtable", Name: "cloud-bigtable", Label: "Cloud Bigtable", Status: btStatus, Port: btPort, Description: "REST-to-gRPC Admin Bridge for high-performance NoSQL"},
@@ -414,6 +418,29 @@ func (api *API) handleManageStorage() http.Handler {
 		log.Printf("[UI/API Proxy] Translated to %s", req.URL.Path)
 	}
 	
+	return proxy
+}
+
+// handleManagePassthrough forwards a dashboard call to the gateway unchanged
+// apart from the /api/manage/<service> prefix, for services whose paths already
+// carry their own version — Resource Manager serves both /v1 and /v3, so
+// rewriting a version in would break half of it.
+func (api *API) handleManagePassthrough(service, host string) http.Handler {
+	target, _ := url.Parse("http://localhost:8080")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+
+		path := strings.TrimPrefix(req.URL.Path, "/api/manage/"+service)
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		req.URL.Path = path
+		req.Host = host
+		log.Printf("[UI/API Proxy] Translated to %s for %s", req.URL.Path, service)
+	}
 	return proxy
 }
 
@@ -1085,8 +1112,11 @@ func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := map[string]string{
+	info := map[string]interface{}{
 		"version": version.Version,
+		// A local build carries no version, so the dashboard can say
+		// "development build" instead of rendering "v dev".
+		"isRelease": version.IsRelease(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
