@@ -513,6 +513,42 @@ func (sm *ServiceManager) Teardown(ctx context.Context) {
 	log.Printf("[Orchestrator] Removed network '%s'", networkName)
 }
 
+// RemoveDataVolumes deletes the named volumes holding emulator data.
+//
+// Teardown deliberately leaves them alone — it runs on every shutdown, and the
+// whole point of the volumes is to outlive the containers it removes. Only
+// uninstall, which is asking to remove everything, calls this.
+func (sm *ServiceManager) RemoveDataVolumes(ctx context.Context) {
+	reg := config.GetImageRegistry()
+	for _, cfg := range reg.Emulators {
+		name, ok := namedVolume(cfg.Volume)
+		if !ok {
+			continue
+		}
+		url := "http://localhost/volumes/" + name
+		req, _ := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+		if _, err := sm.dockerClient.Do(req); err != nil {
+			log.Printf("[Orchestrator] Could not remove volume '%s': %v", name, err)
+			continue
+		}
+		log.Printf("[Orchestrator] Removed volume '%s'", name)
+	}
+}
+
+// namedVolume returns the volume name when a configured volume refers to a
+// Docker-managed volume rather than a host path.
+func namedVolume(volume string) (string, bool) {
+	lastColon := strings.LastIndex(volume, ":")
+	if lastColon <= 0 {
+		return "", false
+	}
+	source := volume[:lastColon]
+	if strings.ContainsAny(source, `/\`) || source == "." || source == ".." {
+		return "", false
+	}
+	return source, true
+}
+
 // PruneExitedContainers removes all containers that are not running.
 func (sm *ServiceManager) PruneExitedContainers(ctx context.Context) error {
 	resp, err := sm.dockerClient.Get("http://localhost/containers/json?all=true&filters={\"status\":[\"exited\",\"created\",\"dead\"]}")
@@ -1199,6 +1235,40 @@ func (sm *ServiceManager) RunCommandInContainer(name string, cmd []string) (stri
 	return result.String(), nil
 }
 
+// resolveBind turns a configured volume into a Docker bind specification.
+//
+// A host path is resolved under ~/.minisky rather than the process working
+// directory. Resolving against the working directory made an emulator's data
+// live wherever the daemon happened to be started from, so the same install
+// saw different data depending on which shell launched it — and the directory
+// it wrote to was usually the user's current project.
+//
+// The directory is created here rather than left to Docker, which would create
+// a missing bind source owned by root inside the user's home.
+//
+// A source with no path separator is a named Docker volume and is passed
+// through untouched.
+func resolveBind(volume string) (string, error) {
+	lastColon := strings.LastIndex(volume, ":")
+	if lastColon <= 0 {
+		return "", fmt.Errorf("volume %q is not in source:target form", volume)
+	}
+	source, target := volume[:lastColon], volume[lastColon+1:]
+
+	// Docker creates and manages a named volume itself.
+	if _, named := namedVolume(volume); named {
+		return volume, nil
+	}
+
+	if !filepath.IsAbs(source) {
+		source = filepath.Join(config.GetMiniskyDir(), source)
+	}
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		return "", fmt.Errorf("create %s: %w", source, err)
+	}
+	return source + ":" + target, nil
+}
+
 func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 	// Bind container port to a random localhost port — works with Docker Desktop
 	// (which runs in a VM where internal bridge IPs aren't host-reachable).
@@ -1211,20 +1281,11 @@ func (sm *ServiceManager) createContainer(c ContainerConfig) error {
 		},
 	}
 	if c.Volume != "" {
-		vol := c.Volume
-		lastColon := strings.LastIndex(vol, ":")
-		if lastColon > 0 {
-			hostPath := vol[:lastColon]
-			containerPath := vol[lastColon+1:]
-			if strings.ContainsAny(hostPath, `/\`) || hostPath == "." || hostPath == ".." {
-				if !filepath.IsAbs(hostPath) {
-					if abs, err := filepath.Abs(hostPath); err == nil {
-						vol = abs + ":" + containerPath
-					}
-				}
-			}
+		if bind, err := resolveBind(c.Volume); err != nil {
+			log.Printf("[Orchestrator] WARNING: %s will not persist: %v", c.Name, err)
+		} else {
+			hostCfg["Binds"] = []string{bind}
 		}
-		hostCfg["Binds"] = []string{vol}
 	}
 
 	payload := map[string]interface{}{

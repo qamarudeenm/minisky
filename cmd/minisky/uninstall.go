@@ -27,8 +27,9 @@ var uninstallCmd = &cobra.Command{
 
 		svcMgr, err := orchestrator.NewServiceManager()
 		if err == nil {
-			log.Println("🧹 Cleaning up Docker containers and networks...")
+			log.Println("🧹 Cleaning up Docker containers, networks and data volumes...")
 			svcMgr.Teardown(context.Background())
+			svcMgr.RemoveDataVolumes(context.Background())
 		} else {
 			log.Printf("⚠️ Could not connect to Docker to clean up containers: %v", err)
 		}

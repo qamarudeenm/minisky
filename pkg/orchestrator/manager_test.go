@@ -7,9 +7,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"minisky/pkg/config"
 )
 
 // fakeTransport routes requests to a handler so tests can fake the Docker
@@ -667,5 +671,65 @@ func TestWaitUntilReadyFailsWhenNothingListens(t *testing.T) {
 	sm := NewServiceManagerForTesting(&fakeTransport{})
 	if err := sm.waitUntilReady(addr, 900*time.Millisecond); err == nil {
 		t.Error("expected a failure when nothing is listening at all")
+	}
+}
+
+// A named volume is Docker's own mechanism and needs no host path, which is
+// what makes it work on Docker Desktop without the user configuring file
+// sharing. A host path must not be mistaken for one.
+func TestNamedVolumeDistinguishesDockerVolumesFromHostPaths(t *testing.T) {
+	cases := map[string]struct {
+		name string
+		ok   bool
+	}{
+		"minisky-storage:/storage":  {"minisky-storage", true},
+		"minisky-datastore:/data":   {"minisky-datastore", true},
+		"./data/datastore:/data":    {"", false},
+		"/var/lib/minisky:/storage": {"", false},
+		"":                          {"", false},
+		"no-target":                 {"", false},
+	}
+	for volume, want := range cases {
+		got, ok := namedVolume(volume)
+		if got != want.name || ok != want.ok {
+			t.Errorf("namedVolume(%q) = (%q, %v), want (%q, %v)", volume, got, ok, want.name, want.ok)
+		}
+	}
+}
+
+// A relative host path used to be resolved against the process working
+// directory, so an emulator's data landed wherever the daemon happened to be
+// started from — usually the user's current project.
+func TestResolveBindResolvesRelativePathsUnderTheMiniskyDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	bind, err := resolveBind("data/datastore:/data")
+	if err != nil {
+		t.Fatalf("resolveBind: %v", err)
+	}
+	want := filepath.Join(config.GetMiniskyDir(), "data", "datastore") + ":/data"
+	if bind != want {
+		t.Errorf("bind = %q, want %q", bind, want)
+	}
+
+	// Docker would otherwise create the missing source owned by root inside the
+	// user's home directory.
+	if info, err := os.Stat(filepath.Join(config.GetMiniskyDir(), "data", "datastore")); err != nil {
+		t.Errorf("bind source was not created: %v", err)
+	} else if !info.IsDir() {
+		t.Error("bind source is not a directory")
+	}
+}
+
+// A named volume is passed through untouched, and nothing is created on the host.
+func TestResolveBindPassesNamedVolumesThrough(t *testing.T) {
+	bind, err := resolveBind("minisky-storage:/storage")
+	if err != nil {
+		t.Fatalf("resolveBind: %v", err)
+	}
+	if bind != "minisky-storage:/storage" {
+		t.Errorf("bind = %q, want it unchanged", bind)
 	}
 }
