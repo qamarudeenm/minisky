@@ -125,7 +125,7 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// projects/{projectId}/apps/{appId}/services/{serviceId}/versions
 
 	switch {
-	case strings.HasSuffix(path, "/apps"):
+	case isApplicationPath(path):
 		api.handleApps(w, r)
 	case strings.Contains(path, "/services"):
 		if strings.Contains(path, "/versions") {
@@ -150,26 +150,142 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (api *API) handleApps(w http.ResponseWriter, r *http.Request) {
-	project := extractSegmentAfter(r.URL.Path, "projects")
-	if r.Method == http.MethodGet {
-		api.mu.RLock()
-		app, ok := api.apps[project]
-		api.mu.RUnlock()
-
-		if !ok {
-			// In MiniSky, we auto-create the app for the project if requested
-			app = &App{
-				Id:           project,
-				LocationId:   "us-central1",
-				DefaultHostname: fmt.Sprintf("%s.appspot.com", project),
-			}
-			api.mu.Lock()
-			api.apps[project] = app
-			api.mu.Unlock()
-		}
-		json.NewEncoder(w).Encode(app)
+// isApplicationPath reports whether a path addresses the application itself —
+// "apps" or "apps/{appsId}" — rather than something beneath it such as
+// "apps/{appsId}/services".
+func isApplicationPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 0 {
+		return false
 	}
+	if parts[len(parts)-1] == "apps" {
+		return true
+	}
+	return len(parts) >= 2 && parts[len(parts)-2] == "apps"
+}
+
+// applicationID resolves which application a request addresses. The Admin API
+// identifies it as apps/{appsId}, where appsId is the project id, while the
+// dashboard calls these same handlers with projects/{projectId} in the path.
+// Accept either, so one implementation serves both callers.
+func applicationID(path string) string {
+	if id := extractSegmentAfter(path, "apps"); id != "" {
+		return id
+	}
+	return extractSegmentAfter(path, "projects")
+}
+
+func (api *API) handleApps(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		api.getApplication(w, r)
+	case http.MethodPost:
+		api.createApplication(w, r)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeAppEngineError(w, http.StatusMethodNotAllowed, "FAILED_PRECONDITION",
+			r.Method+" is not supported on "+r.URL.Path)
+	}
+}
+
+func (api *API) getApplication(w http.ResponseWriter, r *http.Request) {
+	id := applicationID(r.URL.Path)
+	if id == "" {
+		// The Admin API has no list method: an application is always addressed
+		// by id. Auto-creating one for an empty id would leave a nameless app
+		// in state.
+		w.WriteHeader(http.StatusBadRequest)
+		writeAppEngineError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			"an application id is required, as in /v1/apps/{appsId}")
+		return
+	}
+
+	api.mu.RLock()
+	app, ok := api.apps[id]
+	api.mu.RUnlock()
+
+	if !ok {
+		// MiniSky creates the application on first read rather than making
+		// callers provision one before they can use App Engine at all.
+		app = &App{
+			Id:              id,
+			LocationId:      "us-central1",
+			DefaultHostname: fmt.Sprintf("%s.appspot.com", id),
+		}
+		api.mu.Lock()
+		api.apps[id] = app
+		api.mu.Unlock()
+	}
+	json.NewEncoder(w).Encode(app)
+}
+
+// createApplication handles apps.create. The real API answers with a
+// long-running operation rather than the resource, and Terraform's
+// google_app_engine_application polls it, so return one here too — completed
+// immediately, because creation is only a state write.
+func (api *API) createApplication(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Id         string `json:"id"`
+		LocationId string `json:"locationId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeAppEngineError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			"request body is not valid JSON: "+err.Error())
+		return
+	}
+
+	id := body.Id
+	if id == "" {
+		id = applicationID(r.URL.Path)
+	}
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeAppEngineError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			"field 'id' is required and names the project the application belongs to")
+		return
+	}
+
+	location := body.LocationId
+	if location == "" {
+		location = "us-central1"
+	}
+
+	api.mu.Lock()
+	_, exists := api.apps[id]
+	if !exists {
+		api.apps[id] = &App{
+			Id:              id,
+			LocationId:      location,
+			DefaultHostname: fmt.Sprintf("%s.appspot.com", id),
+		}
+	}
+	api.mu.Unlock()
+
+	if exists {
+		w.WriteHeader(http.StatusConflict)
+		writeAppEngineError(w, http.StatusConflict, "ALREADY_EXISTS",
+			"application "+id+" already exists")
+		return
+	}
+
+	api.pushLog(id, "INFO", "default", "Created App Engine application in "+location)
+
+	op := api.opMgr.Register("appengine#operation", "CREATE_APPLICATION", "apps/"+id, "", location)
+	api.opMgr.MarkDone(op.Name)
+	json.NewEncoder(w).Encode(op)
+}
+
+// writeAppEngineError emits the error envelope the Google APIs use. The caller
+// writes the status code first.
+func writeAppEngineError(w http.ResponseWriter, code int, status, message string) {
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+			"status":  status,
+		},
+	})
 }
 
 func (api *API) handleServices(w http.ResponseWriter, r *http.Request) {
